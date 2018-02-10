@@ -92,8 +92,7 @@ void DigitalPulse(int pinNumber, bool motionOnHigh);
 void doHandleClient();
 void SetupAP();
 int ledPin = 2;
-//mesh
-void LoopMesh();
+
 void setup() {
   Serial.begin(115200);
   for (uint8_t t = 4; t > 0; t--) {
@@ -204,14 +203,6 @@ void OnMqttConnected() {
         if (setting == "signallow")
         {
           DigitalPulse((atoi(pin.c_str())), false); //false for infrared
-        }
-        if (setting == "ap")
-        {
-          LoopAP();
-        }
-        if (setting == "mesh")
-        {
-          LoopMesh();
         }
         if (setting = "serialread")
         {
