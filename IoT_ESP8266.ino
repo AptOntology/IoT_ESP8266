@@ -188,7 +188,7 @@ void OnMqttConnected() {
       //Serial.println(setting + ":" + pin + ":" + enable + ":" + threshold + ":" + lastRun);
       if (enable == "true")
       {
-        if (threshold == "0")
+        if (threshold == "0" && (setting == "signalhigh" || setting == "signallow"))
         {
           if (setting == "signalhigh")
             PulseStart((atoi(pin.c_str())), true);
