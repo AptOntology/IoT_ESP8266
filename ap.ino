@@ -12,13 +12,15 @@ void SetupAP() {
   if(apInitialized == false)
   {
     pinMode(A0, INPUT);
+    
     apInitialized = true;
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.disconnect();
-    delay(50);
-
-    WiFi.softAP(("ESP_" + (String)(ESP.getChipId())).c_str(), "");
-  
+    if(enableAP)
+    {
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.disconnect();
+      delay(50);
+      WiFi.softAP(("ESP_" + (String)(ESP.getChipId())).c_str(), "");
+    }
     // Web server
     server.on("/", handleRoot);
     server.on("/scan.html", handleScanNetworks);
@@ -88,6 +90,21 @@ void handleRoot() {
 
 void handleControl()
 {
+  if(server.arg(0).indexOf("enableAP") >= 0) //
+  {
+    if(enableAP)
+    {
+      Out("debug handleControl enableAP", "false");
+      enableAP = false;
+      WiFi.mode(WIFI_STA);
+    }
+    else
+    {
+       Out("debug handleControl enableAP", "true");
+      apInitialized = false;
+      enableAP = true;
+    }
+  }
   if(server.arg(0) == "5")
   {
     Out("handleControl","It's five!");
@@ -166,6 +183,15 @@ void handleSettings() {
   else
   {
     htmlOut += "<tr><th><a href='/control.html?arg=debug'>Debug</a></th> <th>Enable serial debugger</th></tr>";
+  }
+
+  if(enableAP)
+  {
+    htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Disable AP</a></th> <th>Disable Access Point</th></tr>";  
+  }
+  else
+  {
+    htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable AP</a></th> <th>Enable Access Point</th></tr>";
   }
 
   htmlOut += "<tr><th>";
