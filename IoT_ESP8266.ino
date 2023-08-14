@@ -1,685 +1,128 @@
 /**
-  ESP8266 FLASH ROM
-  Settings:
-    SETTING=analog,PIN=0,ENABLE=true,Threshold=120000,LASTRUN=0,
-    SETTING=digital,PIN=12,ENABLE=true,Threshold=60000,LASTRUN=0,
-  Actions:
-    ACTION=restart
-    ACTION=setpin,12,high,
+ESP8266 Client
+
+connects to wifi, get unique settings from either initial, serial input, internal web server input, or internet HTTP /control.php?chipid=ESPID, run the settings on the given inverval
+
+Initial Settings:
+@update,enable=1,time=30000,lastRun=0;
+@serialRead,enable=1;
+@debug,enable=1;
+
+Supported Settings
+@analogRead
+@digitalRead
+
+Native libraries 
+V 0.2
+
 */
+
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
-#include <ESP8266httpUpdate.h>
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
-#include "Adafruit_Sensor.h"
-#include "DHT.h"
-#include "DHT_u.h"
-#include <WiFiClientSecure.h>
-#include <SoftwareSerial.h>
+#include <WiFiClientSecureBearSSL.h>
+#include "certs.h"
 
-// Global Definitions  //
-#define ROM_VERSION "VER=01" // ROM VERSION 
-#define COMMAND_HOST "YourMqttServer.com"
-#define MQTT_PORT 8883
-#define MQTT_USER "esp"
-#define MQTT_PASS "pass"
+#ifndef STASSID
+#define STASSID "YourWifiSSID"
+#define STAPSK "YourWifiPassword"
+#endif
 
-WiFiClientSecure client;
-Adafruit_MQTT_Client mqtt(&client, COMMAND_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS);
+// Objects
+ESP8266WiFiMulti WiFiMulti;
 
-// Local Function variables //
-// ======================================== //
-String chipID = (String)ESP.getChipId();
-String homeWifiPass = (String)"password";
-
-//WIFI
-const char* offlineWifi[30]; // bad access points
-const char* onlineWifi[30]; // good access points
-int connectWifiCount; //ConnectWifi()
-
-// Control
-bool boolRunOnceOnWifi = true;
-unsigned long startTime;
-
-// Commands and settings
-String espSettings[20]; //Holds global settings
-String arSetting[20]; //CommaStrToArray global temporary variable
-int rInt; //CommaStrToArray
-
-// Subscribe -- Setup(), SubscriptMqtt()
-// ======================================== //
-String mqttPubControlStr = "sensornet/" + chipID + "/control";
-Adafruit_MQTT_Subscribe subscribeControl = Adafruit_MQTT_Subscribe(&mqtt, mqttPubControlStr.c_str());
-Adafruit_MQTT_Subscribe subscribeM2M = Adafruit_MQTT_Subscribe(&mqtt, "m2m");
-
-// Function definitions //
-// ======================================== //
-void OnMqttConnected(); //Everything control does while connected to WIFI and given control instructions
-// MQTT
-bool MqttConnect();
-void MqttPublishConnected();
-void MqttPublishAnalogPin(int pinNumber);
-void MqttPublishDigitalPin(int pinNumber);
-void MqttPublishDht(int dhtType,int pinNumber);
-void MqttPublish(String strTopic, String strToPublish);
-void MqttSubscribe();
-void MqttReceived(char * myReceivedMqtt);
-// Updates
-void UpdateSetting(String line);
-void GetUpdate(String host = COMMAND_HOST);
-void UpdateROM(String binName);
-// HTTP Server
-void handleRoot();
-void handleScanNetworks();
-void handleConnectWifi();
-void handleControl();
-// WIFI
-bool ConnectWifi(String ap, String pass);
-bool ConfirmOfflineWifi(const char* strWifi);
-void SetOfflineWifi(const char* strWifi);
-bool ConfirmOnlineWifi(const char* strWifi);
-void SetOnlineWifi(const char* strWifi);
-// ETC
-String GetPublicIP(String host);
-void Blink(int count, int interval);
+// Functions
 void Out(String function, String message);
-void DoLove(); //Delay
-//DigitalPulse
-void PulseStart(int pinNumber, bool motionOnHigh);
-void DigitalPulse(int pinNumber, bool motionOnHigh);
-//AP
-void doHandleClient();
-void SetupAP();
-int ledPin = 2;
+bool GetSetupConfig();
+
+// Global vars
+const String & hostUrl = "https://www.YourServerUrl.net/esp"; // 
+
+int loopInterval = 2000; // delay between action 
+bool isDebugOut = true; //Enable verbose debug logging
+bool runOnce = false;
+bool autonomous; 
+// 60000 millis = 1 min
 
 void setup() {
   Serial.begin(115200);
-  for (uint8_t t = 4; t > 0; t--) {
-    Serial.printf("[SETUP] WAIT %d...\n", t);
-    Serial.flush();
-    delay(500);
-  }
-
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);    // turn the LED off
-
+  Serial.println("");
+  Serial.println("On!");
+  Out("setup","Connecting to ssid...'" STASSID "'");
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-
-  //subscribe to MQTT needs to be run only once
-  mqtt.subscribe(&subscribeControl);
-  mqtt.subscribe(&subscribeM2M);
-
-  //init on/offlineWifi Array
-  for (int i = 0; i < (sizeof(offlineWifi) / sizeof(offlineWifi[0])); i++)
-  {
-    onlineWifi[i] = offlineWifi[i] = "";
-  }
-  
-  SetOnlineWifi("ESP"); //home wifi
+  WiFiMulti.addAP(STASSID, STAPSK);
 }
 
 void loop() {
-  startTime = millis(); //Time to publish MQTT
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    Out("Control", "Begin Connect");
-    digitalWrite(ledPin, HIGH); //Turn LED OFF
-
-    //Connect and get update
-    if (ConnectWifi("", ""))
-      GetUpdate();
+  if ((WiFiMulti.run() == WL_CONNECTED)) {
+    if(runOnce != true) { diag(); runOnce = true; }
+    RunCommands();
   }
   else
   {
-    while (WiFi.status() == WL_CONNECTED)
-    {
-      if (MqttConnect())
-      {
-        OnMqttConnected();
-      }
-      else
-      {
-        //Connected to Wifi, Not Online
-        if (ConfirmOnlineWifi(WiFi.SSID().c_str()) == false)
-        {
-          SetOfflineWifi(WiFi.SSID().c_str());
-          boolRunOnceOnWifi = true;
-        }
-        Blink(2, 250);
-      }
-    }
+    // No WIfi? be autonomous for a while 
+    isDebugOut = autonomous = true; 
   }
-  Out("Loop", "");
+  delay(loopInterval);
+  LoopAP();
 }
 
-void OnMqttConnected() {
-  // Here we will be spending much of our time while connected to WiFi
-  MqttSubscribe();
-  
-  if (boolRunOnceOnWifi) // Run once
-  {
-    MqttPublishConnected();
-    boolRunOnceOnWifi = false;
-    SetOnlineWifi(WiFi.SSID().c_str());
-    digitalWrite(ledPin, LOW);    // turn the LED on
-  }
-
-  for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
-  {
-    if (espSettings[i] != "")
-    {
-      CommaStrToArray(espSettings[i]);
-      String setting,pin,enable,threshold,lastRun;
-      for (int r = 0; r < (sizeof(arSetting) / sizeof(arSetting[0])); r++)
-      {
-        if(arSetting[r].indexOf("SETTING=") != -1)
-          setting = arSetting[r].substring(arSetting[r].indexOf("=")+1, arSetting[r].length());
-        if(arSetting[r].indexOf("PIN=") != -1)
-          pin = arSetting[r].substring(arSetting[r].indexOf("=")+1, arSetting[r].length());
-        if(arSetting[r].indexOf("ENABLE=") != -1)
-          enable = arSetting[r].substring(arSetting[r].indexOf("=")+1, arSetting[r].length());
-        if(arSetting[r].indexOf("THRESHOLD=") != -1)
-          threshold = arSetting[r].substring(arSetting[r].indexOf("=")+1, arSetting[r].length());
-        if(arSetting[r].indexOf("LASTRUN=") != -1)
-          lastRun = arSetting[r].substring(arSetting[r].indexOf("=")+1, arSetting[r].length());
-      }
-      //Serial.println(setting + ":" + pin + ":" + enable + ":" + threshold + ":" + lastRun);
-      if (enable == "true")
-      {
-        if (threshold == "0" && (setting == "signalhigh" || setting == "signallow"))
-        {
-          if (setting == "signalhigh")
-            PulseStart((atoi(pin.c_str())), true);
-          else if(setting == "signallow")
-            PulseStart((atoi(pin.c_str())), false);
-          UpdateSetting("SETTING=" + setting + "," + "PIN=" + pin + "," + "ENABLE=" + enable + "," + "THRESHOLD=1,");
-        }
-        if (setting == "signalhigh")
-        {
-          DigitalPulse((atoi(pin.c_str())), true); //true for pir
-        }
-        if (setting == "signallow")
-        {
-          DigitalPulse((atoi(pin.c_str())), false); //false for infrared
-        }
-        if (setting = "serialread")
-        {
-          //SETTING=serialread,12,13,
-          CommaStrToArray(setting); // return arSetting global 
-          Out("serialwrite", arSetting[1] + " : " + arSetting[2] + " : " + arSetting[3]);
-          SoftwareSerial ser(atoi(arSetting[1].c_str()), atoi(arSetting[2].c_str()));
-          ser.begin(115200);
-          if(ser.available())
-          {
-            int inByte = ser.read();
-            // TODO
-          }
-        }
-        // Run on schedule 
-        if ((atoi(threshold.c_str()) >= 100) && (millis() - atoi(lastRun.c_str())) > atoi(threshold.c_str()))
-        {
-          if (setting == "analog")
-          {
-            MqttPublishAnalogPin((atoi(pin.c_str())));
-          }
-          if (setting == "digital")
-          {
-            MqttPublishDigitalPin((atoi(pin.c_str())));
-          }
-          if (setting == "dht11")
-          {
-            MqttPublishDht(11,(atoi(pin.c_str())));
-          }
-          if (setting == "dht22")
-          {
-            MqttPublishDht(22,(atoi(pin.c_str())));
-          }
-          //UpdateSetting("SETTING=" + setting + "," + "PIN=" + pin + "," + "ENABLE=" + enable + "," + "THRESHOLD=" + threshold + "," + "LASTRUN=" + millis() + ",");
-          UpdateSetting(espSettings[i].substring(0, espSettings[i].indexOf("LASTRUN=")) + "LASTRUN=" + millis() + ",");
-        }
-      }
-    }
-    else
-    {
-      break; //no more settings
-    }
-  }
+void diag() {
+ String gatewayIp = WiFi.gatewayIP().toString();
+ String localIp = WiFi.localIP().toString();
+ Out("diag gateway ip", gatewayIp);
+ Out("diag local ip", localIp);
 }
 
-bool MqttConnect() {
-  int8_t ret;
-  if (mqtt.connected()) {
-    return true;
-  }
-
-  Out("MqttConnect", "Connecting to MQTT... ");
-
-  uint8_t retries = 3;
-  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
-    Serial.println(mqtt.connectErrorString(ret));
-    Out("MqttConnect", ("Retrying MQTT connection in 2 seconds..."));
-    mqtt.disconnect();
-    delay(2000);  // wait 5 seconds
-    retries--;
-    if (retries == 0) {
-      Out("MqttConnect", "MQTT Not connected!");
-      return false;
-    }
-  }
-  Out("MqttConnect", "MQTT Connected!");
-  return true;
-}
-
-void MqttPublishAnalogPin(int pinNumber) {
-  String mqttPublishStr = ("sensornet/" + (String)(chipID) + ("/analog/" + (String)pinNumber));
-  pinMode(pinNumber, INPUT);
-  int sensorValue = analogRead(pinNumber);
-  if (sensorValue != 0)
+String espSettings[20];
+void UpdateSettings(String line)
+{
+  if(line != "")
   {
-    MqttPublish(mqttPublishStr, (String)sensorValue);
-  }
-}
-
-void MqttPublishDigitalPin(int pinNumber) {
-  String mqttPublishStr = ("sensornet/" + (String)(chipID) + ("/digital/" + (String)pinNumber));
-  pinMode(pinNumber, INPUT);
-  int sensorValue = digitalRead((uint8_t)pinNumber);
-  MqttPublish(mqttPublishStr, (String)sensorValue);
-}
-
-double Fahrenheit(double celsius) {
-  return 1.8 * celsius + 32;
-}
-
-void MqttPublishDht(int dhtType, int pinNumber) {
-  DHT_Unified dht(pinNumber, dhtType);
-  dht.begin();
-
-  sensors_event_t event;  
-  dht.temperature().getEvent(&event);
-  delay(3);
-  sensors_event_t eventh;  
-  dht.humidity().getEvent(&eventh);
-
-  if (isnan(event.temperature)) {
-    Serial.println("Error reading temperature!");
-  }
-  else
-  {
-    String mqttPublishStr = ("sensornet/" + (String)(chipID) + ("/dht/temperature"));
-    String mqttPublishStrH = ("sensornet/" + (String)(chipID) + ("/dht/humidity"));
-    MqttPublish(mqttPublishStr, (String)Fahrenheit(event.temperature));
-    MqttPublish(mqttPublishStrH, (String)eventh.relative_humidity);
-  }
-}
-
-void MqttPublishConnected() {
-  String mqttPubStrArray[10] = {"info/ssid", "info/localip", "info/gatewayip", "info/rssi", "info/publicip", "info/version"};
-
-  for (int i = 0; i < (sizeof( mqttPubStrArray) / sizeof(mqttPubStrArray[0])); i++)
-  {
-    mqttPubStrArray[i] = ("sensornet/" + (String)(chipID) + "/" + mqttPubStrArray[i]);
-  }
-
-  for (int i = 0; i < (sizeof( mqttPubStrArray) / sizeof(mqttPubStrArray[0])); i++)
-  {
-    switch (i)
-    {
-      case 0:
-        {
-          MqttPublish(mqttPubStrArray[i], WiFi.SSID());
-          break;
-        }
-      case 1:
-        {
-          char buf[17];
-          IPAddress ip = WiFi.localIP();
-          sprintf(buf, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-          MqttPublish(mqttPubStrArray[i], buf);
-          break;
-        }
-      case 2:
-        {
-          char buf[17];
-          IPAddress ipg = WiFi.gatewayIP();
-          sprintf(buf, "%d.%d.%d.%d", ipg[0], ipg[1], ipg[2], ipg[3]);
-          MqttPublish(mqttPubStrArray[i], buf);
-          break;
-        }
-      case 3:
-        {
-          MqttPublish((String)mqttPubStrArray[i], (String)WiFi.RSSI());
-          break;
-        }
-      case 4:
-        {
-          MqttPublish((String)mqttPubStrArray[i], GetPublicIP(COMMAND_HOST));
-          break;
-        }
-      case 5:
-        {
-          MqttPublish((String)mqttPubStrArray[i], (String)ROM_VERSION);
-          break;
-        }
-        DoLove();
-    }
-  }
-}
-
-void MqttPublish(String topic, String message) {
-  Blink(2,100);
-  Out("MqttPublish", (String)topic + " : " + message);
-  Adafruit_MQTT_Publish mqp = Adafruit_MQTT_Publish(&mqtt, topic.c_str());
-  mqp.publish(message.c_str());
-}
-
-void MqttSubscribe() {
-  Adafruit_MQTT_Subscribe *subscription;
-  while ((subscription = mqtt.readSubscription(250))) {
-    if (subscription == &subscribeControl) {
-      MqttReceived((char *)subscribeControl.lastread);
-    }
-    if (subscription == &subscribeM2M) {
-      MqttReceived((char *)subscribeM2M.lastread);
-    }
-  }
-}
-
-void MqttReceived(char * myReceivedMqtt) {
-  Out("MqttReceived", (String)myReceivedMqtt);
-
-  UpdateSetting((String)myReceivedMqtt);
-}
-
-// ==================== //
-// SCAN/Connect WIFI
-// ==================== //
-String GetNearbySSID() {
-  int lowRSSI = -95;
-  String nearbyAP;
-  int n = WiFi.scanNetworks();
-
-  if (n == 0)
-    Out("GetNearbySSID", "No networks found");
-  else
-  {
-    Out("GetNearbySSID", ((String)"Networks found : " + (String)n));
-    for (int i = 0; i < n; ++i)
-    {
-      //ESP32 is WIFI_AUTH_OPEN, ESP8266 is ENC_TYPE_NONE
-      if ((lowRSSI < WiFi.RSSI(i) && (WiFi.encryptionType(i) == ENC_TYPE_NONE) && ConfirmOfflineWifi(WiFi.SSID(i).c_str()) == false) || ConfirmOnlineWifi(WiFi.SSID(i).c_str()) == true)
-      {
-        lowRSSI = WiFi.RSSI(i);
-        nearbyAP = WiFi.SSID(i);
-        Out("GetNearbySSID", (String)nearbyAP + ":" + (String)lowRSSI);
-      }
-    }
-  }
-  DoLove();
-  return nearbyAP;
-}
-
-bool ConnectWifi(String ap, String pass) {
-  if (ap == "")
-  {
-    ap = GetNearbySSID();
-    if (ap == onlineWifi[0]) //TODO
-      pass = homeWifiPass;
-  }
-
-  Out("ConnectWifi", ap);
-
-  if (ap != "")
-  {
-    WiFi.begin(ap.c_str(), pass.c_str());
-
-    unsigned long startTimeCW = millis();
-    while ((WiFi.status() != WL_CONNECTED && millis() - startTimeCW < 15000)) {
-      DoLove();
-    }
-    if ((WiFi.status() == WL_CONNECTED))
-    {
-      connectWifiCount = 0;
-      Blink(2, 250);
-      return true;
-    }
-    else
-    {
-      Out("ConnectWifi", "Not Connected.");
-      //If failed to connect x times then set offline
-      connectWifiCount += 1;
-      if (connectWifiCount == 5)
-      {
-        if (ConfirmOnlineWifi(WiFi.SSID().c_str()) == false)
-        {
-          SetOfflineWifi(WiFi.SSID().c_str());
-        }
-      }
-    }
-  }
-  return false;
-}
-
-// Check if Wifi SSID exists in offlinewifi array
-bool ConfirmOfflineWifi(const char* strWifi) {
-  bool isWifiOffline = false;
-  for (int i = 0; i < (sizeof(offlineWifi) / sizeof(offlineWifi[0])); ++i)
-  {
-    if ((strcmp(offlineWifi[i], strWifi) == 0)) // if WIFI.SSID matches offlineWifi
-    {
-      isWifiOffline = true;
-      i = 100;
-      break;
-    }
-  }
-  return isWifiOffline;
-}
-
-//flag current wifi as offline
-void SetOfflineWifi(const char * strWifi) {
-  for (int i = 0; i < (sizeof(offlineWifi) / sizeof(offlineWifi[0])); ++i)
-  {
-    if ((strcmp(offlineWifi[i], strWifi) == 0))
-    {
-      i = 100; //already added, break
-      break;
-    }
-    else if (offlineWifi[i] == "")
-    {
-      offlineWifi[i] = strWifi;
-      Out("SetOfflineWifi", (String)strWifi);
-      i = 100; //set to 100 to end for loop
-      break;
-    }
-  }
-  WiFi.disconnect();
-}
-
-bool ConfirmOnlineWifi(const char* strWifi) {
-  bool isOnlineWifi = false;
-  for (int i = 0; i < (sizeof(onlineWifi) / sizeof(onlineWifi[0])); ++i)
-  {
-    if (strcmp(onlineWifi[i], strWifi) == 0) // if WIFI.SSID matches onlineWifi
-    {
-      isOnlineWifi = true;
-      i = 100;
-      break;
-    }
-  }
-  return isOnlineWifi;
-}
-
-void SetOnlineWifi(const char* strWifi) {
-  for (int i = 0; i < (sizeof(onlineWifi) / sizeof(onlineWifi[0])); ++i)
-  {
-    if (strcmp(onlineWifi[i], strWifi) == 0) //check if current connected wifi matches onlineWifi list
-    {
-      i = 100;
-      break;
-    }
-    else if (onlineWifi[i] == "")
-    {
-      onlineWifi[i] = strWifi;
-      Out("SetOnlineWifi", strWifi);
-      i = 100; //set to 100 to end for loop
-      break;
-    }
-  }
-}
-// ROM UPDATE
-String clientOutput[50];
-void ConnectHttp(String host, String url, int httpPort) {
-  for(int i=0; i < (sizeof(clientOutput) / sizeof(clientOutput[0])); i++) 
-  {
-    clientOutput[i] = "";
-  }
- 
-  WiFiClient cl;
-  if (!cl.connect(host.c_str(), httpPort)) {
-    Out("ConnectHttp", "Connect Fail : Return");
-    return;
-  }
-  // This will send the request to the server
-  cl.print(String("GET ") + url + " HTTP/1.1\r\n" +
-           "Host: " + host + "\r\n" +
-           "Connection: close\r\n\r\n");
-  unsigned long timeout = millis();
-  while (cl.available() == 0) {
-    if (millis() - timeout > 5000) {
-      Out("ConnectHttp", "Connect Timeout : Return");
-      cl.stop();
-      return;
-    }
-  }
-  int i;
-  while (cl.available())
-  {
-    String line = cl.readStringUntil(' ');
-    clientOutput[i] = line;
-    i++;
-  }
-  Out("ConnectHttp", "Host: " + host + " | Url: " + url + " | Port: " + httpPort + " | Return: " + i);
-}
-
-void GetUpdate(String host) {
-  bool needROMUpdate = false;
-  String url = "/sensornet/update.html?espid=" + (String)chipID;
-  String updateUrl;
-  ConnectHttp(host, url, 80);
-  for(int i = 0; i < (sizeof(clientOutput) / sizeof(clientOutput[0])); i++)
-  {
-    String line = clientOutput[i];
-    if (line.indexOf("VER=") != -1) //Will not equal -1 if found
-    {
-      if (line.indexOf(ROM_VERSION) != -1)
-      {
-        Out("GetUpdate", "Connect Success: " + (String)line.c_str() + " = " + (String)ROM_VERSION);
-      }
-      else
-      {
-        // VER= is found but not ROM_VERSION.
-        Out("GetUpdate", "Needs ROM Update: " + (String)line.c_str());
-        needROMUpdate = true;
-      }
-    }
-    if (line.indexOf("ROM=") != -1)
-    {
-      updateUrl = (String)line.substring((line.indexOf("ROM=") + 4), line.indexOf(".bin") + 4); //Start on line 5 to remove ROM=
-    }
-    if (line.indexOf("SETTING=") != -1)
-    {
-      // SETTINGS UPDATE
-      UpdateSetting((String)line);
-    }
-  }
-  if (needROMUpdate)
-    UpdateROM(updateUrl);
-
-  Out("GetUpdate", "Connect Success : Return");
-}
-
-// Called from GetUpdate()
-void UpdateROM(String url) {
-  Out("UpdateROM", "Url: " + url);
-  //String url = "http://" + (String)COMMAND_HOST + "/media/" + (String)binName;
-  for (int i = 0; i < 5; ++i)
-  {
-    Blink(4, 250);
-    t_httpUpdate_return ret = ESPhttpUpdate.update(url);
-    //t_httpUpdate_return  ret = ESPhttpUpdate.update("https://server/file.bin");
-
-    switch (ret) {
-      case HTTP_UPDATE_FAILED:
-        Out("UpdateROM", ("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str()));
-        break;
-
-      case HTTP_UPDATE_NO_UPDATES:
-        Out("UpdateROM", ("HTTP_UPDATE_NO_UPDATES"));
-        break;
-
-      case HTTP_UPDATE_OK:
-        Out("UpdateROM", ("HTTP_UPDATE_OK"));
-        break;
-    }
-    DoLove();
-  }
-}
-
-String GetPublicIP(String host) {
-  String url = "/sensornet/getip.html";
-  String publicIP;
-  ConnectHttp(host, url, 80);
-  for(int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
-  {
-    if (clientOutput[i].indexOf("IP=") != -1)
-    {
-      publicIP = (String)clientOutput[i].substring((clientOutput[i].indexOf("IP=") + 3), clientOutput[i].length());
-    }
-  }
-  return publicIP;
-}
-
-// Handle settings string to array
-// PARAM: SETTING=analog,PIN=0,THRESHOLD=10000,
-// Output: arSetting[0] == SETTING=analog
-//         arSetting[1] == PIN=0
-void CommaStrToArray(String strSetting) {
-  if(rInt == 0)
-  {
-    for (int r = 0; r < (sizeof(arSetting) / sizeof(arSetting[0])); r++)
-    {
-      arSetting[r] = "";
-    }
-  }
-  if(strSetting.indexOf(",") != -1)
-  {
-    arSetting[rInt] = strSetting.substring(0, strSetting.indexOf(","));
-    rInt += 1;
-    CommaStrToArray(strSetting.substring(strSetting.indexOf(",")+1, strSetting.length()));
-  }
-  else
-  {
-    rInt = 0;
-  }
-}
-
-// Add setting to array
-void UpdateSetting(String line) {
-  if (line.indexOf("SETTING=") != -1)
-  {
-    Out("UpdateSetting", line);
     for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
     {
-      String settingName = line.substring(line.indexOf("=")+1, line.indexOf(","));
+      String settingName = line.substring(line.indexOf("@")+1, line.indexOf(","));
       if (espSettings[i].indexOf(settingName) != -1)
       {
-        espSettings[i] = line; //update existing setting
+        Out("debug UpdateSettings update ", line);
+        // if incoming lastRun = 0 then set to 0, update lastRun cycle with millis if between 1-10, and set explicit if greater than 10
+        if(line.indexOf("lastRun") > 0)
+        {
+          String incomingLastRun1 = line.substring(line.indexOf("lastRun="),line.indexOf(";")); // @cmd,pin=1,time=1,lastRun=123;
+          String incomingLastRun = incomingLastRun1.substring(incomingLastRun1.indexOf("=")+1,incomingLastRun1.indexOf(";")); //123
+          if(incomingLastRun == "0") // update as-is, always runs on next interval
+          {
+            Out("debug UpdateSettings incomingLastRun ", (String)incomingLastRun);
+            espSettings[i] = line; //update existing setting
+          }
+          else if(atoi(incomingLastRun.c_str()) < 10) // if less than 10 then continue with the current lastRun cycle, useful for update command so it's not continually cycling
+          {
+           // long theTime = millis();
+           // espSettings[i] = line.substring(0,line.indexOf("lastRun="))+"lastRun="+theTime+";";
+            String previousRun1 = espSettings[i].substring(espSettings[i].indexOf("lastRun="),espSettings[i].indexOf(";")); // @cmd,pin=1,time=1,lastRun=123;
+            String previousRun = previousRun1.substring(previousRun1.indexOf("=")+1,previousRun1.indexOf(";")); //123
+           espSettings[i] = line.substring(0,line.indexOf("lastRun=")) + "lastRun="+previousRun+";";
+           
+          }
+          else //else update LastRun with incoming // incoming last run greater than 10 indicates we want to change it now
+          {
+            Out("debug UpdateSettings incomingLastRun > 10 ", (String)incomingLastRun);
+            long theTime = millis();
+            //espSettings[i] = line;
+            espSettings[i] = line.substring(0,line.indexOf("lastRun="))+"lastRun="+theTime+";";  
+          }
+        }
+        else
+        {
+          Out("debug UpdateSettings update existing, no LastRun : ", ((String)line + " : " + (String)i));
+          espSettings[i] = line; //update existing setting
+        }
         break;
       }
       else if (espSettings[i] == "")
       {
+        Out("debug UpdateSettings add ", line);
         espSettings[i] = line; //add new setting
         break;
       }
@@ -687,171 +130,307 @@ void UpdateSetting(String line) {
   }
   else
   {
-    if (line.indexOf("blink") != -1)
+    Out("debug UpdateSettings Line enmpty ", line);
+  }
+}
+
+void SendData(String command, String data)
+{
+    Out("debug SendData command",command);
+    Out("debug SendData data", data);
+    String dataUrl = hostUrl + "/data.php";
+    String chipID = (String)ESP.getChipId();
+    String response = GetHttpResponse((dataUrl)+"?chipid="+chipID+"&cmd="+command+"&data="+data);
+    Out("debug SendData response", response);
+}
+
+void RunCommands() {
+    // @update,enable=1,true;
+    // @anlogRead,pin=1,enable=0,time=100,lastRun=9;
+    // @debug,enable=0;
+    if(espSettings[0].indexOf(",") < 1) { 
+      espSettings[0] = "@update,enable=1,time=30000,lastRun=0;"; 
+      espSettings[1] = "@serialRead,enable=1;"; 
+      espSettings[2] = "@debug,enable=1,false;";
+      } // if empty add update
+    for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
     {
-      Blink(2, 250);
-    }
-    else if (line.indexOf("update") != -1)
-    {
-      GetUpdate(COMMAND_HOST);
-    }
-    else if (line.indexOf("publish") != -1)
-    {
-      MqttPublishConnected();
-      for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
-      {
         if (espSettings[i] != "")
         {
-          UpdateSetting(espSettings[i].substring(0, espSettings[i].indexOf("LASTRUN=")) + "LASTRUN=0,");
+          String toRun = espSettings[i];
+          String enableStr1 = (toRun.substring(toRun.indexOf("enable"), toRun.indexOf(";"))); //enable=1,time=30000,lastRun=0;
+          String enableStr = (enableStr1.substring(enableStr1.indexOf("=")+1,enableStr1.indexOf("=")+2)); // 1
+          if(enableStr == "1" || enableStr != "0")
+          {
+            Out("debug RunCommands enabled ",toRun);
+            if(toRun.startsWith("@analogRead")) 
+            {
+              // toRun :  @analogRead,enable=1,pin=A0,time=10,lastRun=0;
+
+              // todo
+              //String pinStr1 = toRun.substring(toRun.indexOf("pin"), toRun.indexOf(",", toRun.indexOf("pin")));
+              //String intervalStr1 = toRun.substring(toRun.indexOf("time"), toRun.indexOf(",", toRun.indexOf("time")));
+              //String lastRunStr1 = toRun.substring(toRun.indexOf("lastRun"), toRun.indexOf(";", toRun.indexOf("lastRun")));
+              //String pinStr1 = toRun.substring(toRun.indexOf("pin"),toRun.indexOf(";")); // pin=0,time=10,lastRun=0;
+              //String pinStr = pinStr1.substring(pinStr1.indexOf("=")+1,pinStr1.indexOf(",")); // 0
+              String pinStr2 = toRun.substring(toRun.indexOf("pin"), toRun.indexOf(",", toRun.indexOf("pin"))); //pin=A0
+              String pinStr = pinStr2.substring(pinStr2.indexOf("=")+1,pinStr2.length()); // A0
+
+              if(pinStr.indexOf("A") != -1) // this must start wtih A
+              {
+                //interval time
+                String intervalStr1 = toRun.substring(toRun.indexOf("time"),toRun.indexOf(";")); // time=10,lastrun=0;
+                String intervalStr = intervalStr1.substring(intervalStr1.indexOf("=")+1,intervalStr1.indexOf(",")); // 10
+
+                //last run time
+                String lastRunStr1 = toRun.substring(toRun.indexOf("lastRun"),toRun.indexOf(";")); // lastRun=0;
+                String lastRunStr = lastRunStr1.substring(lastRunStr1.indexOf("=")+1,lastRunStr1.indexOf(";")); // 0
+
+                // Get time interval to run and last run time. If time to run then run
+                if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
+                {
+                  String analogValue = (String)analogRead(atoi(pinStr.c_str()));
+                  Out("RunCommands",((String)"analogRead " + (String)pinStr + " value : " + analogValue));
+                  if(analogValue != "1024" && analogValue != "0")
+                  {
+                    SendData("analogRead",analogValue);
+                  }
+                  UpdateSettings("@analogRead,pin="+pinStr+",time="+intervalStr+",lastRun="+millis()+";");
+                }
+              }
+              else
+              {
+               Out("debug RunCommands analogRead pinStr no A : ", pinStr);
+              }
+            }
+            if(toRun.startsWith("@digitalRead"))
+            {
+              // toRun : @digitalRead,pin=0,time=1000,lastrun=12345;
+              String pinStr1 = toRun.substring(toRun.indexOf("pin"),toRun.lastIndexOf(";")); // pin=0,time=1000/t,lastrun=12345;
+              String pinStr = pinStr1.substring(pinStr1.indexOf("=")+1,pinStr1.indexOf(",")); // 0
+              pinMode(atoi(pinStr.c_str()), INPUT);
+              String analogValue = (String)digitalRead(atoi(pinStr.c_str()));
+              Out("RunCommands",((String)"digitalRead " + (String)pinStr + " value : " + analogValue));
+              SendData("digitalRead",analogValue);
+            }
+            if(toRun.startsWith("@digitalWrite"))               // toRun : @digitalWrite,pin=0,type=HIGH,time=1000,lastrun=12345;
+            {
+              String pinStr1 = toRun.substring(toRun.indexOf("pin"),toRun.lastIndexOf(";")); // pin=0,time=1000/t,lastrun=12345;
+              String pinStr = pinStr1.substring(pinStr1.indexOf("=")+1,pinStr1.indexOf(",")); // 0//
+              String typeStr1 = toRun.substring(toRun.indexOf("type"),toRun.lastIndexOf(";")); // type=HIGH,time=1000,lastrun=12345;
+              String typeStr = typeStr1.substring(typeStr1.indexOf("=")+1,typeStr1.indexOf(",")); // HIGH
+            
+              pinMode(atoi(pinStr.c_str()), OUTPUT);
+              if(typeStr == "HIGH")
+              {
+                digitalWrite(atoi(pinStr.c_str()),HIGH);
+              }
+              else if(typeStr == "LOW")
+              {
+                digitalWrite(atoi(pinStr.c_str()),LOW);
+              }
+              Out("RunCommands",((String)"digitalWrite " + (String)pinStr + " " + (String)typeStr));
+            }
+            if(toRun.startsWith("@loop"))
+            {
+              // toRun : @loop,time=10000,enable=1;
+              // todo: add enable, refactor to include time string rather than = in the next line
+              int newLoopInterval = atoi((toRun.substring(toRun.lastIndexOf("=")+1,toRun.length())).c_str());
+              //Out("debug RunCommand Loop interval", ("Loop interval set to "+ (String)newLoopInterval));
+              if(loopInterval != newLoopInterval)
+              {
+                loopInterval = newLoopInterval;
+              }
+            }
+            if(toRun.startsWith("@update")) //@update,enable=1,time=10000,lastRun=0;
+            {            
+              //interval time
+              String intervalStr1 = toRun.substring(toRun.indexOf("time"),toRun.indexOf(";")); // time=10,lastrun=0;
+              String intervalStr = intervalStr1.substring(intervalStr1.indexOf("=")+1,intervalStr1.indexOf(",")); // 10
+
+              //Out("debug RunCommandsupdate intervalStr1", intervalStr1);
+              //Out("debug RunCommandsupdate intervalStr", intervalStr);
+
+              //last run time
+              String lastRunStr1 = toRun.substring(toRun.indexOf("lastRun"),toRun.indexOf(";")); // lastRun=0;
+              String lastRunStr = lastRunStr1.substring(lastRunStr1.indexOf("=")+1,lastRunStr1.indexOf(";")); // 0
+
+              // Get time interval to run and last run time. If time to run then run
+              if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
+              {
+                Out("debug RunCommandsupdate ", "Running GetSetupConfig()");
+                if(GetSetupConfig())
+                {
+                  // received update
+                  //Out("debug RunCommands GetSetupConfig returned true", " ");
+                }
+                else
+                {
+                  // no @update from server, update the LastRun to now and keep the current intervalStr
+                  //Out("debug RunCommands GetSetupConfig returned false", " ");
+                  if(intervalStr == "") { intervalStr = "45000";} // if no interval then set to 45 seconds
+                  UpdateSettings("@update,enable=1,time="+intervalStr+",lastRun="+millis()+";");
+                  //UpdateSettings("@analogRead,pin="+pinStr+",time="+intervalStr+",lastRun="+millis()+";");
+              
+                }
+              }
+            }
+            if(toRun.startsWith("@debug"))               //@debug,enable=1,mode=false;
+            {
+              if(toRun.indexOf("false") > 0)
+              {
+                isDebugOut = false;
+              }
+              else 
+              {
+                isDebugOut = true;
+              }
+            }
+            if(toRun.startsWith("@serialRead"))
+            {
+              if(Serial.available())
+              {
+                Out("RunCommands","Reading serial...");
+                int x;
+                String readStr = "";
+
+                  readStr = Serial.readString();
+                  delay(2);
+                  x=x++;
+                  if(readStr != "")
+                  {
+                    readStr = readStr.substring(0,readStr.length()-1);
+                    readStr.trim();
+                    Out("RunCommands serialRead",readStr);
+                    if(readStr.startsWith("@"))
+                    {
+                      UpdateSettings(readStr);
+                    }
+                    else
+                    {
+                      SendData("serialRead",readStr);
+                    }
+                  }
+              }
+            }
+          }
+        }
+    }
+}
+
+String GetHttpResponse(String url) {
+  Out("debug GetHttpResponse url", url);
+  String payload;
+     std::unique_ptr<BearSSL::WiFiClientSecure> client(new BearSSL::WiFiClientSecure);
+    client->setFingerprint(fingerprint_sni_cloudflaressl_com);
+    client->setInsecure();
+
+    HTTPClient https;
+    //Out("loop","[HTTPS] begin...\n");
+    if (https.begin(*client, url)) {  // HTTPS
+      int httpCode = https.GET();
+      Out("debug GetHttpResponse httpCode 1: ", (String)httpCode);
+
+      // httpCode will be negative on error
+      if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+          payload = https.getString();
+          Out("debug GetHttpResponse payload", payload);
         }
       }
     }
-    else if (line.indexOf("setpin") != -1)
+    else
     {
-      // ACTION=setpin,12,low,
-      CommaStrToArray(line); // return arSetting global 
-      Out("SetPin", arSetting[1] + " : " + arSetting[2]);
-      pinMode(atoi(arSetting[1].c_str()), OUTPUT);
-      if (arSetting[2] == "high")
-        digitalWrite((atoi(arSetting[1].c_str())), HIGH);
-      else if (arSetting[2] == "low")
-        digitalWrite((atoi(arSetting[1].c_str())), LOW);
+      Out("debug GetHttpResponse https.begin ", "false");
     }
-    else if (line.indexOf("reset") != -1)
-    {
-      digitalWrite(15, LOW);
-      digitalWrite(0, LOW);
-      digitalWrite(2, HIGH);
-      DoLove();
-      ESP.restart();
-    }
-    else if (line.indexOf("serialwrite") != -1)
-    {
-      //ACTION=serialwrite,12,13,1,
-      CommaStrToArray(line); // return arSetting global 
-      Out("serialwrite", arSetting[1] + " : " + arSetting[2] + " : " + arSetting[3]);
-      SoftwareSerial ser(atoi(arSetting[1].c_str()), atoi(arSetting[2].c_str()));
-      ser.begin(115200);
-      ser.write(arSetting[3].c_str());
-    }
-  }
+    return payload;
 }
 
-void Blink(int count, int interval) {
-  for (int i = 0; i < count; i++)
+bool GetSetupConfig() {
+  bool toReturn = false;
+  String chipID = (String)ESP.getChipId();
+  String controlUrl = hostUrl + "/control.php/?chipid="+chipID;
+  String payload = GetHttpResponse(controlUrl);
+  Out("debug GetSetupConfig url", controlUrl);
+  Out("debug GetSetupConfig payload", payload);
+
+  /* 
+    payload is a String
+    @aR,pin0,time3;
+    @dR,pin12,time3;
+    @update;
+    @debug;
+  */
+  int loopLength = 0;
+  int atIndex = 0;
+  int semiIndex = 0;
+  String subPayload = payload;
+  //calculate amount of lines in payload, add up the semicolon
+  String payloadTemp = payload; 
+  payloadTemp.replace(";","");
+  int payloadLength = payload.length()-payloadTemp.length();
+
+  Out("debug GetSetupConfig payloadLength", (String)payloadLength);
+
+  while(loopLength <= payloadLength)
   {
-    digitalWrite(ledPin, HIGH);   // turn the LED off
-    delay(interval);              // wait for a second
-    digitalWrite(ledPin, LOW);    // turn the LED on
-    delay(interval);              // wait for a second
+    if(semiIndex == 0)  //first entry
+    {
+      atIndex = subPayload.indexOf("@");
+      semiIndex = subPayload.indexOf(";");
+    }
+    else
+    {
+      //from the second to the last entry, subString the payload ( This removes the previous line from the payload)
+      subPayload = subPayload.substring(semiIndex+1,(subPayload.length())); // add one to exclude the last ;
+      atIndex = subPayload.indexOf("@");
+      semiIndex = subPayload.indexOf(";");
+    }
+    //Out("deubg GetSetupConfig atIndex",(String)atIndex);
+    //Out("deubg GetSetupConfig semiIndex",(String)semiIndex);
+    //Out("deubg GetSetupConfig subPayload",(String)subPayload);
+
+    // at index should always be 1, semiIndex should always be the length of the string, the last entry may or may not have a ; (lol)
+    String theCmd = subPayload.substring(atIndex,semiIndex+1);
+
+    if(theCmd.indexOf("@update") != -1) 
+    {
+      toReturn = true;
+    }
+    if(theCmd.indexOf("0") != 0) // filter this 
+    {
+      UpdateSettings(theCmd);
+    }
+
+    if(semiIndex == 0 || semiIndex == -1)
+    {
+      loopLength = payload.length(); // last one
+    }
+    loopLength++;
   }
+  return toReturn; // false if server didn't return @update string
 }
 
 void Out(String function, String message) {
-  Serial.print(millis());
-  Serial.print(" : ");
-  Serial.print(function);
-  Serial.print(" : ");
-  Serial.println(message);
-}
+  bool isOut;
 
-void DoLove() {
-  delay(30);
-}
-
-//Digital Pulse
-
-//the time when the sensor outputs a low impulse
-long unsigned int lowTime;       
-long unsigned int highTime;   
-long unsigned int lowTime2;       
-long unsigned int highTime2;     
-
-//the amount of milliseconds the sensor has to be low 
-//before we assume all motion has stopped
-long unsigned int pause1 = 3000;  
-boolean lockLow = true;
-boolean takeLowTime;
-boolean lockLow2 = true;
-boolean takeLowTime2;
-
-void PulseStart(int pinNumber, bool motionOnHigh) {
-  Out("PulseStart", (String)pinNumber);
-  
-  pinMode(pinNumber, INPUT);
-  if(motionOnHigh)
-    digitalWrite(pinNumber, LOW);
-  else
-    digitalWrite(pinNumber, HIGH);
-}
-
-void DigitalPulse(int pinNumber, bool motionOnHigh) {
-  if(motionOnHigh)
+  if(function.startsWith("debug") && isDebugOut) {
+    isOut = true;
+  }
+  else if(function.startsWith("debug") && isDebugOut == false)
   {
-    if(digitalRead(pinNumber) == HIGH)
-    {
-      //pir is HIGH on and LOW off
-       if(lockLow)
-       {  
-         //makes sure we wait for a transition to LOW before any further output is made:
-         lockLow = false;     
-         highTime = millis();       
-         MqttPublish(("sensornet/" + (String)(chipID) + ("/signalhigh/" + (String)pinNumber)), (String)true);
-         delay(50);
-       }         
-       takeLowTime = true;
-    }
-    if(digitalRead(pinNumber) == LOW)
-    {
-      if(takeLowTime)
-      {
-      lowTime = millis();          //save the time of the transition from high to LOW
-      takeLowTime = false;       //make sure this is only done at the start of a LOW phase
-      highTime = 0;
-      }
-      //if the sensor is low for more than the given pause, assume that no more motion is going to happen
-      if(!lockLow && millis() - lowTime > pause1)
-      {
-         //makes sure this block of code is only executed again after a new motion sequence has been detected
-         lockLow = true;                        
-         MqttPublish(("sensornet/" + (String)(chipID) + ( "/signalhigh/" + (String)pinNumber)), (String)false);
-         delay(50);
-      }
-    }
+    isOut = false;
   }
   else
   {
-    //infrared is HIGH off and LOW on
-    if(digitalRead(pinNumber) == LOW)
-    {
-      //pir is HIGH on and LOW off
-       if(lockLow2)
-       {  
-         //makes sure we wait for a transition to LOW before any further output is made:
-         lockLow2 = false;     
-         highTime2 = millis();       
-         MqttPublish(("sensornet/" + (String)(chipID) + ( "/signallow/" + (String)pinNumber)), (String)false);
-         delay(50);
-       }         
-       takeLowTime2 = true;
-    }
-    if(digitalRead(pinNumber) == HIGH)
-    {
-      if(takeLowTime2)
-      {
-        lowTime2 = millis();          //save the time of the transition from high to LOW
-        takeLowTime2 = false;       //make sure this is only done at the start of a LOW phase
-        highTime2 = 0;
-      }
-      //if the sensor is low for more than the given pause, assume that no more motion is going to happen
-      if(!lockLow2 && millis() - lowTime2 > pause1)
-      {
-         //makes sure this block of code is only executed again after a new motion sequence has been detected
-         lockLow2 = true;                        
-         MqttPublish(("sensornet/" + (String)(chipID) + ( "/signallow/" + (String)pinNumber)), (String)true);
-         delay(50);
-      }
-    }
+    isOut = true;
+  }
+  if(isOut)
+  {
+    Serial.print(millis());
+    Serial.print(" : ");
+    Serial.print(function);
+    Serial.print(" : ");
+    Serial.println(message);
   }
 }
-
