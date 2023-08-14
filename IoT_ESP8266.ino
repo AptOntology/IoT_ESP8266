@@ -4,13 +4,15 @@ ESP8266 Client
 connects to wifi, get unique settings from either initial, serial input, internal web server input, or internet HTTP /control.php?chipid=ESPID, run the settings on the given inverval
 
 Initial Settings:
-@update,enable=1,time=30000,lastRun=0;
+@update,enable=1,time=300000,lastRun=0;
 @serialRead,enable=1;
-@debug,enable=1;
+@debug,enable=1,true;
 
 Supported Settings
-@analogRead
+@analogRead,enable=1,pin=A0,time=30000,lastRun=0;
 @digitalRead
+
+Note: setting order shouldn't matter, code logic finds the name
 
 Native libraries 
 V 0.2
@@ -39,9 +41,11 @@ bool GetSetupConfig();
 // Global vars
 const String & hostUrl = "https://www.YourServerUrl.net/esp"; // 
 
+
 int loopInterval = 2000; // delay between action 
 bool isDebugOut = true; //Enable verbose debug logging
 bool runOnce = false;
+bool enableAP = false; 
 bool autonomous; 
 // 60000 millis = 1 min
 
@@ -52,6 +56,7 @@ void setup() {
   Out("setup","Connecting to ssid...'" STASSID "'");
   WiFi.mode(WIFI_STA);
   WiFiMulti.addAP(STASSID, STAPSK);
+  SetupAP();
 }
 
 void loop() {
@@ -61,11 +66,12 @@ void loop() {
   }
   else
   {
-    // No WIfi? be autonomous for a while 
-    isDebugOut = autonomous = true; 
+    // No WIfi? be autonomous AP for a while 
+    isDebugOut = autonomous = enableAP = true; 
   }
   delay(loopInterval);
-  LoopAP();
+
+  LoopAP(); // Be an AP if enableAP else handle web server?
 }
 
 void diag() {
@@ -149,7 +155,7 @@ void RunCommands() {
     // @anlogRead,pin=1,enable=0,time=100,lastRun=9;
     // @debug,enable=0;
     if(espSettings[0].indexOf(",") < 1) { 
-      espSettings[0] = "@update,enable=1,time=30000,lastRun=0;"; 
+      espSettings[0] = "@update,enable=1,time=300000,lastRun=0;"; 
       espSettings[1] = "@serialRead,enable=1;"; 
       espSettings[2] = "@debug,enable=1,false;";
       } // if empty add update
