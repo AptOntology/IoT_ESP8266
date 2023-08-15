@@ -1,7 +1,7 @@
 /**
 ESP8266 Client
 
-connects to wifi, get unique settings from either initial, serial input, internal web server input, or internet HTTP /control.php?chipid=ESPID, run the settings on the given inverval
+connects to wifi, sets initial settings, then get unique settings from serial input, internal web site input, or internet HTTP server, lastly run the settings on the given inverval
 
 Initial Settings:
 @update,enable=1,time=300000,lastRun=0;
@@ -12,13 +12,12 @@ Supported Settings
 @analogRead,enable=1,pin=A0,time=30000,lastRun=0;
 @digitalRead
 
-Note: setting order shouldn't matter, code logic finds the name
+Todo support for multiple @analogRead, @digitalRead per pin, currently allows 1
 
 Native libraries 
 V 0.2
 
 */
-
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
@@ -41,12 +40,12 @@ bool GetSetupConfig();
 // Global vars
 const String & hostUrl = "https://www.YourServerUrl.net/esp"; // 
 
-
 int loopInterval = 2000; // delay between action 
 bool isDebugOut = true; //Enable verbose debug logging
 bool runOnce = false;
 bool enableAP = false; 
 bool autonomous; 
+String theStatus; // short status update for instant dashboard reporting? TODO currently last function to write Out
 // 60000 millis = 1 min
 
 void setup() {
@@ -63,22 +62,20 @@ void loop() {
   if ((WiFiMulti.run() == WL_CONNECTED)) {
     if(runOnce != true) { diag(); runOnce = true; }
     RunCommands();
+    
   }
   else
   {
     // No WIfi? be autonomous AP for a while 
     isDebugOut = autonomous = enableAP = true; 
+    theStatus = "No Wifi!"; // ??TODO??
   }
   delay(loopInterval);
-
   LoopAP(); // Be an AP if enableAP else handle web server?
 }
 
 void diag() {
- String gatewayIp = WiFi.gatewayIP().toString();
- String localIp = WiFi.localIP().toString();
- Out("diag gateway ip", gatewayIp);
- Out("diag local ip", localIp);
+  // multi-diag for setup() through RunCommands? with output to serial and wifi SendOutput()?
 }
 
 String espSettings[20];
@@ -150,15 +147,32 @@ void SendData(String command, String data)
     Out("debug SendData response", response);
 }
 
+// can this logic be abstracted into a function ?
+String GetSettingValue(String toRun, String name) //incoming toRun and name of command (pin,time,lastRun,etc)
+{ 
+  String thingStr1 = toRun.substring(toRun.indexOf(name),toRun.indexOf(";")); // pin=0,time=10,lastRun=0; // could end in , or ;
+  String thingStr;
+  if(thingStr1.indexOf(",") > thingStr1.indexOf(";"))
+  {
+    thingStr = thingStr1.substring(thingStr1.indexOf("=")+1,thingStr1.indexOf(",")); // 0
+  }
+  else
+  {
+    thingStr = thingStr1.substring(thingStr1.indexOf("=")+1,thingStr1.indexOf(";")); // 0
+  }
+  return thingStr; 
+}
+
+void initSettings()
+{
+  espSettings[0] = "@update,enable=1,time=300000,lastRun=0;"; 
+  espSettings[1] = "@serialRead,enable=1;"; 
+  espSettings[2] = "@debug,enable=1,false;";
+  theStatus = "Settings initialized!"; // ??TODO??
+}
+
 void RunCommands() {
-    // @update,enable=1,true;
-    // @anlogRead,pin=1,enable=0,time=100,lastRun=9;
-    // @debug,enable=0;
-    if(espSettings[0].indexOf(",") < 1) { 
-      espSettings[0] = "@update,enable=1,time=300000,lastRun=0;"; 
-      espSettings[1] = "@serialRead,enable=1;"; 
-      espSettings[2] = "@debug,enable=1,false;";
-      } // if empty add update
+    if(espSettings[0].indexOf(",") < 1) { initSettings(); }  // if settings empty then initialize
     for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
     {
         if (espSettings[i] != "")
@@ -171,27 +185,15 @@ void RunCommands() {
             Out("debug RunCommands enabled ",toRun);
             if(toRun.startsWith("@analogRead")) 
             {
-              // toRun :  @analogRead,enable=1,pin=A0,time=10,lastRun=0;
-
-              // todo
-              //String pinStr1 = toRun.substring(toRun.indexOf("pin"), toRun.indexOf(",", toRun.indexOf("pin")));
-              //String intervalStr1 = toRun.substring(toRun.indexOf("time"), toRun.indexOf(",", toRun.indexOf("time")));
-              //String lastRunStr1 = toRun.substring(toRun.indexOf("lastRun"), toRun.indexOf(";", toRun.indexOf("lastRun")));
-              //String pinStr1 = toRun.substring(toRun.indexOf("pin"),toRun.indexOf(";")); // pin=0,time=10,lastRun=0;
-              //String pinStr = pinStr1.substring(pinStr1.indexOf("=")+1,pinStr1.indexOf(",")); // 0
-              String pinStr2 = toRun.substring(toRun.indexOf("pin"), toRun.indexOf(",", toRun.indexOf("pin"))); //pin=A0
-              String pinStr = pinStr2.substring(pinStr2.indexOf("=")+1,pinStr2.length()); // A0
-
-              if(pinStr.indexOf("A") != -1) // this must start wtih A
+              String pinStr = GetSettingValue(toRun,"pin");
+              String intervalStr = GetSettingValue(toRun,"time"); 
+              String lastRunStr = GetSettingValue(toRun,"lastRun");
+              Out("debug RunCommands analogRead pin ",pinStr);
+              Out("debug RunCommands analogRead time ",intervalStr);
+              Out("debug RunCommands analogRead lastRun ",lastRunStr);// work!
+          
+              if(pinStr.indexOf("A") != -1) // this must start with A
               {
-                //interval time
-                String intervalStr1 = toRun.substring(toRun.indexOf("time"),toRun.indexOf(";")); // time=10,lastrun=0;
-                String intervalStr = intervalStr1.substring(intervalStr1.indexOf("=")+1,intervalStr1.indexOf(",")); // 10
-
-                //last run time
-                String lastRunStr1 = toRun.substring(toRun.indexOf("lastRun"),toRun.indexOf(";")); // lastRun=0;
-                String lastRunStr = lastRunStr1.substring(lastRunStr1.indexOf("=")+1,lastRunStr1.indexOf(";")); // 0
-
                 // Get time interval to run and last run time. If time to run then run
                 if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
                 {
@@ -237,11 +239,22 @@ void RunCommands() {
               }
               Out("RunCommands",((String)"digitalWrite " + (String)pinStr + " " + (String)typeStr));
             }
+            if(toRun.startsWith("@AccessPoint"))
+            {
+              if(toRun.indexOf("true") >= 0)
+              {
+                enableAP = true;
+              }
+              else
+              {
+                enableAP = false;
+              }
+            }
             if(toRun.startsWith("@loop"))
             {
               // toRun : @loop,time=10000,enable=1;
               // todo: add enable, refactor to include time string rather than = in the next line
-              int newLoopInterval = atoi((toRun.substring(toRun.lastIndexOf("=")+1,toRun.length())).c_str());
+              long newLoopInterval = atoi((toRun.substring(toRun.lastIndexOf("=")+1,toRun.length())).c_str());
               //Out("debug RunCommand Loop interval", ("Loop interval set to "+ (String)newLoopInterval));
               if(loopInterval != newLoopInterval)
               {
@@ -297,26 +310,25 @@ void RunCommands() {
               if(Serial.available())
               {
                 Out("RunCommands","Reading serial...");
-                int x;
                 String readStr = "";
-
-                  readStr = Serial.readString();
-                  delay(2);
-                  x=x++;
-                  if(readStr != "")
+                readStr = Serial.readString();
+                delay(2);
+              
+                if(readStr != "")
+                {
+                  readStr = readStr.substring(0,readStr.length()-1);
+                  readStr.trim();
+                  Out("RunCommands serialRead",readStr);
+                  if(readStr.startsWith("@"))
                   {
-                    readStr = readStr.substring(0,readStr.length()-1);
-                    readStr.trim();
-                    Out("RunCommands serialRead",readStr);
-                    if(readStr.startsWith("@"))
-                    {
-                      UpdateSettings(readStr);
-                    }
-                    else
-                    {
-                      SendData("serialRead",readStr);
-                    }
+                    UpdateSettings(readStr);
+                    theStatus = "Settings SERIAL configured!"; // ??TODO??
                   }
+                  else
+                  {
+                    SendData("serialRead",readStr);
+                  }
+                }
               }
             }
           }
@@ -403,9 +415,10 @@ bool GetSetupConfig() {
     {
       toReturn = true;
     }
-    if(theCmd.indexOf("0") != 0) // filter this 
+    if(theCmd.indexOf("0") != 0) // filter 0 results from commands.php 
     {
       UpdateSettings(theCmd);
+      theStatus = "Settings SERVER configured!"; // ??TODO??
     }
 
     if(semiIndex == 0 || semiIndex == -1)
@@ -419,7 +432,7 @@ bool GetSetupConfig() {
 
 void Out(String function, String message) {
   bool isOut;
-
+  //theStatus = function; // ??TODO??
   if(function.startsWith("debug") && isDebugOut) {
     isOut = true;
   }
