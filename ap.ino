@@ -3,9 +3,7 @@ void handleSettings();
 void handleInfo();
 void handleScanNetworks();
 #include <ESP8266WebServer.h>
-
 ESP8266WebServer server(80);
-
 bool apInitialized;
 
 void SetupAP() {
@@ -90,7 +88,15 @@ void handleRoot() {
 
 void handleControl()
 {
-  if(server.arg(0).indexOf("enableAP") >= 0) //
+  if(server.arg(0).indexOf("resetHeap") >= 0)
+  {
+    ESP.resetHeap();
+  }
+  if(server.arg(0).indexOf("fullreset") >= 0)
+  {
+    ESP.reset();
+  }
+  if(server.arg(0).indexOf("enableAP") >= 0)
   {
     if(enableAP)
     {
@@ -104,10 +110,6 @@ void handleControl()
       apInitialized = false;
       enableAP = true;
     }
-  }
-  if(server.arg(0) == "5")
-  {
-    Out("handleControl","It's five!");
   }
 
   if(server.arg(0).indexOf("@") == 0) //
@@ -128,45 +130,113 @@ void handleControl()
     }
   }
   
-  handleRoot();
+  handleSettings();
 }
 
 void handleInfo()
 {
     String htmlOut = getHead();
-    htmlOut += "<h2>CpuFreqMHz: ";
+    htmlOut += "<table style='width:100%'><tbody>";
+    htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
+
+    htmlOut += "<tr><th>Status</th><th> </th></tr>";
+    
+    htmlOut += "<tr><td>Ready</td><td>";
+    if((millis() / 60000) > 1)
+    {
+      htmlOut += "<h2>On</h2>";
+    }
+    else
+    {
+      htmlOut += "<i>self-check</i>";
+    }
+    htmlOut += "</td></tr>";
+
+    htmlOut += "<tr><td>Stage</td><td>";
+      htmlOut += theStatus;
+    htmlOut += "</td></tr>";
+
+    htmlOut += "<tr><th>System</th><th> </th></tr>";
+
+    htmlOut += "<tr><td>CpuFreqMHz</td><td>";
     htmlOut += (String)ESP.getCpuFreqMHz();
-    htmlOut += "</h2>";
-        htmlOut += "<h2>FreeHeap: ";
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>FreeHeap</td><td> ";
     htmlOut += (String)ESP.getFreeHeap();
-    htmlOut += "</h2>";
-        htmlOut += "<h2>HeapFragmentation: ";
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>HeapFragmentation</td><td> ";
     htmlOut += (String)ESP.getHeapFragmentation();
-    htmlOut += "</h2>";
-
-            htmlOut += "<h2>FlashChipId: ";
-    htmlOut += (String)ESP.getFlashChipId();
-    htmlOut += "</h2>";
-            htmlOut += "<h2>getCycleCount: ";
-    htmlOut += (String)ESP.getCycleCount();
-    htmlOut += "</h2>";
-            htmlOut += "<h2>checkFlashCRC: ";
+    htmlOut += "</td></tr>";
+    //htmlOut += "<tr><td>getCycleCount</td><td> ";
+    /*htmlOut += (String)ESP.getCycleCount();
+    htmlOut += "</td></tr>";*/
+    htmlOut += "<tr><td>checkFlashCRC</td><td> ";
     htmlOut += (String)ESP.checkFlashCRC();
-    htmlOut += "</h2>";
-                htmlOut += "<h2>checkFlashConfig: ";
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>checkFlashConfig</td><td> ";
     htmlOut += (String)ESP.checkFlashConfig();
-    htmlOut += "</h2>";
-                htmlOut += "<h2>macAddress: ";
-    htmlOut += (String)WiFi.macAddress();
-    htmlOut += "</h2>";
-                htmlOut += "<h2>hostName: ";
-    htmlOut += (String)WiFi.getHostname();
-    htmlOut += "</h2>";
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>ResetInfo</td><td> ";
+    htmlOut += (String)ESP.getResetInfo();
+    htmlOut += "</td></tr>";
 
-            htmlOut += "<h2>Random: ";
+    /*
+    htmlOut += "<tr><td>Random</td><td> ";
     htmlOut += (String)ESP.random();
-    htmlOut += "</h2>";
+    htmlOut += "</td></tr>";
+    */
 
+    htmlOut += "<tr><th>Wifi</th><th> </th></tr>";
+
+    htmlOut += "<tr><td>SSID</td><td>";
+    htmlOut += (String)WiFi.SSID();
+    htmlOut += "</td></tr>";
+
+     htmlOut += "<tr><td>RSSI</td><td>";
+    htmlOut += (String)WiFi.RSSI();
+    htmlOut += "</td></tr>";
+
+    htmlOut += "<tr><td>Mode</td><td>";
+    htmlOut += (String)WiFi.getMode();
+    htmlOut += "</td></tr>";
+
+    htmlOut += "<tr><td>Channel</td><td>";
+    htmlOut += (String)WiFi.channel();
+    htmlOut += "</td></tr>";
+
+    htmlOut += "<tr><th>Network</th><th> </th></tr>";
+    
+    htmlOut += "<tr><td>host Name</td><td> ";
+    htmlOut += (String)WiFi.getHostname();
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>Local IP</td><td>";
+    htmlOut += (String)WiFi.localIP().toString();
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>Gateway IP</td><td> ";
+    htmlOut += (String)WiFi.gatewayIP().toString();
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>DNS IP</td><td> ";
+    htmlOut += (String)WiFi.dnsIP().toString();
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>Subnet</td><td>";
+    htmlOut += (String)WiFi.subnetMask().toString();
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>MAC Address</td><td> ";
+    htmlOut += (String)WiFi.macAddress();
+    htmlOut += "</td></tr>";
+
+    htmlOut += "</td></tr>";
+  
+    htmlOut += "<tr><th>Program</th><th> </th></tr>";
+    htmlOut += "<tr><td>Settings</td><td>";
+    for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
+    {
+      htmlOut += "<p>";
+      htmlOut += espSettings[i];
+      htmlOut += "</p>";
+    }
+
+    htmlOut += "</tbody></table>";
     htmlOut += getFoot();
     server.send(200, "text/html", htmlOut);
     delay(30); //rest easy
@@ -193,6 +263,10 @@ void handleSettings() {
   {
     htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable AP</a></th> <th>Enable Access Point</th></tr>";
   }
+
+  htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
+  
+  // ADD NEXT SETTING ABOVE : 
 
   htmlOut += "<tr><th>";
 
@@ -266,11 +340,9 @@ void handleScanNetworks() {
         htmlOut += WiFi.SSID(iArray[i]); 
         htmlOut += "</th><th>"; 
         htmlOut += WiFi.RSSI(iArray[i]); 
-        //htmlOut += "</th><th>"; 
-        //htmlOut += WiFi.encryptionType(iArray[i]);
         htmlOut += "</th><th>"; 
         htmlOut += "<a href='/connect.html?ssid=" + (String)WiFi.SSID(iArray[i]) + "'>Connect</a>";
-        htmlOut += "</th></tr>";
+        htmlOut += "</td></tr>";
       }
     }
   }
