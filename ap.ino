@@ -4,10 +4,10 @@ void handleInfo();
 void handleScanNetworks();
 #include <ESP8266WebServer.h>
 ESP8266WebServer server(80);
-bool apInitialized;
+bool apInitialized = false;
 
 void SetupAP() {
-  if(apInitialized == false)
+  if(!apInitialized)
   {
     pinMode(A0, INPUT);
     
@@ -26,6 +26,7 @@ void SetupAP() {
     server.on("/control.html", handleControl); 
     server.on("/settings.html", handleSettings);
     server.on("/info.html", handleInfo);
+    server.on("/output.html", handleOutput);
     server.begin();
     Out("SetupAP", "Complete");
   }
@@ -47,14 +48,16 @@ String macToString(const unsigned char* mac) {
 String getHead()
 {
   //<head> <meta http-equiv='refresh' content='15'>
+  String htmlHead2;
   String htmlHead1 = "<html> <head> <style> .flex-container { display: -webkit-flex; display: flex; -webkit-flex-flow: row wrap; flex-flow: row wrap; text-align: center; } .flex-container > * { padding: 15px; -webkit-flex: 1 100%; flex: 1 100%; } .article { text-align: left; } header {background: black;color:white;} footer {background: #aaa;color:white;} .nav {background:#eee;} .nav ul { list-style-type: none; padding: 0; } .nav ul a { text-decoration: none; } @media all and (min-width: 768px) { .nav {text-align:left;-webkit-flex: 1 auto;flex:1 auto;-webkit-order:1;order:1;} .article {-webkit-flex:5 0px;flex:5 0px;-webkit-order:2;order:2;} footer {-webkit-order:3;order:3;} } </style> </head> <body> <div class='flex-container'> <header> <h1>ESP_";
-  String htmlHead2 = "</h1> </header> <nav class='nav'> <ul> ";
-  htmlHead2 += "<li><h2><a href='/'>Root</a></h2></li> "; 
-  htmlHead2 += "<li><h2><a href='/info.html'>Info</a></h2></li> "; 
-  htmlHead2 += "<li><h2><a href='/scan.html'>Wifi</a></h2></li> ";
+  htmlHead1 += (String)(ESP.getChipId());
+  htmlHead1 += "</h1></header> <nav class='nav'> <ul> ";
+  htmlHead2 += "<li><h2><a href='/'>Root /</a></h2></li> "; 
+  htmlHead2 += "<li><h2><a href='/info.html'>Status</a></h2></li> "; 
   htmlHead2 += "<li><h2><a href='/settings.html'>Settings</a></h2></li> "; 
+  htmlHead2 += "<li><h2><a href='/output.html'>Output</a></h2></li> ";
   String htmlHead3 = "</ul> </nav> <article class='article'>";
-  String htmlHead = htmlHead1 + (String)(ESP.getChipId()) + htmlHead2 + htmlHead3;
+  String htmlHead = htmlHead1 + htmlHead2 + htmlHead3;
   return htmlHead;
 }
 
@@ -68,19 +71,27 @@ void handleRoot() {
   String htmlOut = getHead();
   if (WiFi.status() == WL_CONNECTED)
   {
-    htmlOut += "<h2>SSID: ";
+    htmlOut += "<h2>Connected to ";
     htmlOut += WiFi.SSID();
     htmlOut += "</h2>";
-    htmlOut += "<h2>RSSI: ";
-    htmlOut += WiFi.RSSI();
-    htmlOut += "</h2>";
   }
-  htmlOut += "<h2>A0: "; 
-  htmlOut += (String)analogRead(A0);
-  htmlOut += " </h2>";
-  htmlOut += "<h2>Uptime: "; 
+  if(enableAP) {
+    htmlOut += "</h1><p>"; htmlOut += " The access point is <b>enabled</b></p>";
+    }
+    else
+    {
+
+    }
+  // Server hostUrl status?
+  // Last status or any error on SendData ?
+  htmlOut += "<p>On for ";
   htmlOut += String(millis() / 60000);
-  htmlOut += " minutes</h2>";
+  htmlOut += " minutes.</p>";
+
+  htmlOut += "<p>Status is ";
+  htmlOut += theStatus;
+  htmlOut += "</p>";
+
   htmlOut += getFoot();
   server.send(200, "text/html", htmlOut);
   delay(30); //rest easy
@@ -88,6 +99,10 @@ void handleRoot() {
 
 void handleControl()
 {
+  if(server.arg(0).indexOf("wifidisconnect") >= 0)
+  {
+    WiFi.disconnect();
+  }
   if(server.arg(0).indexOf("resetHeap") >= 0)
   {
     ESP.resetHeap();
@@ -100,15 +115,13 @@ void handleControl()
   {
     if(enableAP)
     {
-      Out("debug handleControl enableAP", "false");
-      enableAP = false;
-      WiFi.mode(WIFI_STA);
+      UpdateSettings("@AccessPoint,enable=1,be=false;");
     }
     else
     {
-       Out("debug handleControl enableAP", "true");
+      Out("debug handleControl enableAP", "true");
       apInitialized = false;
-      enableAP = true;
+      UpdateSettings("@AccessPoint,enable=1,be=true;");
     }
   }
 
@@ -129,8 +142,21 @@ void handleControl()
       UpdateSettings("@debug,enable=1,true;");
     }
   }
-  
   handleSettings();
+}
+
+void handleOutput()
+{
+    String htmlOut = getHead();
+    //htmlOut += "<table style='width:100%'><tbody>";
+    //htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
+    //htmlOut += "</tbody></table>";
+
+    htmlOut += "much to do";
+
+    htmlOut += getFoot();
+    server.send(200, "text/html", htmlOut);
+    delay(30); //rest easy
 }
 
 void handleInfo()
@@ -138,9 +164,7 @@ void handleInfo()
     String htmlOut = getHead();
     htmlOut += "<table style='width:100%'><tbody>";
     htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
-
-    htmlOut += "<tr><th>Status</th><th> </th></tr>";
-    
+    htmlOut += "<tr><th>Status</th><th> </th>";
     htmlOut += "<tr><td>Ready</td><td>";
     if((millis() / 60000) > 1)
     {
@@ -151,13 +175,13 @@ void handleInfo()
       htmlOut += "<i>self-check</i>";
     }
     htmlOut += "</td></tr>";
-
     htmlOut += "<tr><td>Stage</td><td>";
-      htmlOut += theStatus;
+    htmlOut += theStatus;
     htmlOut += "</td></tr>";
-
     htmlOut += "<tr><th>System</th><th> </th></tr>";
-
+    htmlOut += "<tr><td>Uptime</td><td>";
+    htmlOut += String(millis() / 60000);
+    htmlOut += "</td></tr>";
     htmlOut += "<tr><td>CpuFreqMHz</td><td>";
     htmlOut += (String)ESP.getCpuFreqMHz();
     htmlOut += "</td></tr>";
@@ -186,7 +210,7 @@ void handleInfo()
     htmlOut += "</td></tr>";
     */
 
-    htmlOut += "<tr><th>Wifi</th><th> </th></tr>";
+    htmlOut += "<tr><th>Wifi</th><th> </th>";
 
     htmlOut += "<tr><td>SSID</td><td>";
     htmlOut += (String)WiFi.SSID();
@@ -203,7 +227,7 @@ void handleInfo()
     htmlOut += "<tr><td>Channel</td><td>";
     htmlOut += (String)WiFi.channel();
     htmlOut += "</td></tr>";
-
+ htmlOut += "</tr>";
     htmlOut += "<tr><th>Network</th><th> </th></tr>";
     
     htmlOut += "<tr><td>host Name</td><td> ";
@@ -224,9 +248,7 @@ void handleInfo()
     htmlOut += "<tr><td>MAC Address</td><td> ";
     htmlOut += (String)WiFi.macAddress();
     htmlOut += "</td></tr>";
-
     htmlOut += "</td></tr>";
-  
     htmlOut += "<tr><th>Program</th><th> </th></tr>";
     htmlOut += "<tr><td>Settings</td><td>";
     for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
@@ -248,11 +270,11 @@ void handleSettings() {
   htmlOut += "<tr><th><b>Control</b></th><th><b>Description</b></th></tr>";
   if(isDebugOut)
   {
-    htmlOut += "<tr><th><a href='/control.html?arg=debug'>Production</a></th> <th>Enable production serial output</th></tr>";  
+    htmlOut += "<tr><th><a href='/control.html?arg=debug'>Enable Production</a></th> <th>Enable production serial output</th></tr>";  
   }
   else
   {
-    htmlOut += "<tr><th><a href='/control.html?arg=debug'>Debug</a></th> <th>Enable serial debugger</th></tr>";
+    htmlOut += "<tr><th><a href='/control.html?arg=debug'>Enable Debug</a></th> <th>Enable serial debugger</th></tr>";
   }
 
   if(enableAP)
@@ -263,9 +285,10 @@ void handleSettings() {
   {
     htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable AP</a></th> <th>Enable Access Point</th></tr>";
   }
-
-  htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
+  //htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
   
+  htmlOut += "<tr><th><a href='/scan.html'>Wifi Scan</a></th></ltri>";
+
   // ADD NEXT SETTING ABOVE : 
 
   htmlOut += "<tr><th>";
@@ -296,7 +319,8 @@ void handleScanNetworks() {
 
   htmlOut += "<h2>Scan Results:</h2>";
   int n = WiFi.scanNetworks();
-  
+  Out("debug handleScanNetworks scanNetworks", (String)n);
+
   htmlOut += "<table style='width:100%'>";
   htmlOut += "<tr><th><b>SSID</b></th><th><b>RSSI</b></th><th><b>Connect</b></th></hr>";
   
@@ -344,6 +368,17 @@ void handleScanNetworks() {
         htmlOut += "<a href='/connect.html?ssid=" + (String)WiFi.SSID(iArray[i]) + "'>Connect</a>";
         htmlOut += "</td></tr>";
       }
+      else
+      {
+        htmlOut += "<tr><th>"; 
+        htmlOut += WiFi.SSID(iArray[i]); 
+        htmlOut += "</th><th>"; 
+        htmlOut += WiFi.RSSI(iArray[i]); 
+        htmlOut += "</th><th>"; 
+        htmlOut += (String)WiFi.encryptionType(iArray[i]);
+        //htmlOut += "<a href='/connect.html?ssid=" + (String)WiFi.SSID(iArray[i]) + "'>Connect</a>";
+        htmlOut += "</td></tr>";
+      }
     }
   }
   htmlOut += "</table><BR><BR>";
@@ -354,7 +389,7 @@ void handleScanNetworks() {
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    //htmlOut += "<BR><BR><a href='/control.html?arg=2'>Disconnect WiFi</a></th></tr>";
+    htmlOut += "<BR><BR><a href='/control.html?arg=wifidisconnect'>Disconnect WiFi</a></th></tr>";
   }
   htmlOut += getFoot();
   delay(30); //rest easy
