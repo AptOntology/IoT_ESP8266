@@ -1,5 +1,7 @@
 void handleRoot();
 void handleSettings();
+void handleControl();
+void handleOutput();
 void handleInfo();
 void handleScanNetworks();
 #include <ESP8266WebServer.h>
@@ -69,6 +71,8 @@ String getFoot()
 
 void handleRoot() { 
   String htmlOut = getHead();
+htmlOut += "<h2>Hello! I am " + (String)WiFi.hostname();
+ htmlOut += ".</h2>";
   if (WiFi.status() == WL_CONNECTED)
   {
     htmlOut += "<h2>Connected to ";
@@ -147,16 +151,28 @@ void handleControl()
 
 void handleOutput()
 {
-    String htmlOut = getHead();
-    //htmlOut += "<table style='width:100%'><tbody>";
-    //htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
-    //htmlOut += "</tbody></table>";
+  String htmlOut = getHead();
+  htmlOut += "<table style='width:100%'><tbody>";
+  htmlOut += "<tr><td><b>Command</b></td><td><b>Result</b></td><td></td></tr>";
+ 
+  for(int x=0; x<=4; x++) 
+  {
+    htmlOut += "<tr>";
+    htmlOut += "<td>";
+    htmlOut += lastFiveSent[0][x];
+    htmlOut += "</td><td>";
+    htmlOut += lastFiveSent[1][x];
+    htmlOut += "</td>";
+    //htmlOut += "</td><td>";
+    //htmlOut += lastFiveSent[2][x];
+    htmlOut += "</td>";
+    htmlOut += "</tr>";
+  }
 
-    htmlOut += "much to do";
-
-    htmlOut += getFoot();
-    server.send(200, "text/html", htmlOut);
-    delay(30); //rest easy
+  htmlOut += "</tbody></table>";
+  htmlOut += getFoot();
+  server.send(200, "text/html", htmlOut);
+  delay(30); //rest easy
 }
 
 void handleInfo()
@@ -287,16 +303,15 @@ void handleSettings() {
   }
   //htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
   
-  htmlOut += "<tr><th><a href='/scan.html'>Wifi Scan</a></th></ltri>";
+  htmlOut += "<tr><th><a href='/scan.html'>Wifi Scan</a></th></tr>";
 
   // ADD NEXT SETTING ABOVE : 
-
+  htmlOut += "<tr><tr> <th></tr>";
   htmlOut += "<tr><th>";
-
   htmlOut += "<form action='/control.html' method='get'>";
-  htmlOut += "Setting: <input type='text' name='setting'>";
-  htmlOut += "<input type='submit' value='control'>";
-  htmlOut += "</th><th>@Setting,enable=1,time=1000,lastRun;</th></tr>";
+  htmlOut += "Setting: <input type='text' name='Command:'>";
+  htmlOut += "<input type='submit' value='Set'>";
+  htmlOut += "</th><th>@Setting,enable=1,time=1000,lastRun=0;</th></tr>";
   if ((WiFi.status() == WL_CONNECTED))
   {
     //htmlOut += "<tr><th><a href='/control.html?arg=update'>Get ROM update</a></th> <th>Apply ROM and settings update</th></tr>";
@@ -348,7 +363,6 @@ void handleScanNetworks() {
           lowRSSI = rssiArray[i]; // Set lowRSSI equal to current, lowest, RSSI
         }
       }
-      
       iArray[x] = lowestI; //Now we have the lowest RSSI ID == lowestI 
       rssiArray[lowestI] = -1000; //set current RSSI equal to -1000 so it's not checked again
       //find next lowest RSSI
@@ -382,7 +396,6 @@ void handleScanNetworks() {
     }
   }
   htmlOut += "</table><BR><BR>";
-
   htmlOut += "<form action='/connect.html' method='get'>";
   htmlOut += "Manual AP: <input type='text' name='ssid'>";
   htmlOut += "<input type='submit' value='Connect'>";
@@ -401,7 +414,6 @@ void handleConnectWifi() {
 
    WiFi.disconnect();
    WiFiMulti.addAP((server.arg(0)).c_str());
-   //ConnectWifi(server.arg(0),"");
    setup();
    delay(300); //rest easy
    handleRoot(); 
