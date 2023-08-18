@@ -22,9 +22,23 @@ Supported Settings
 @debug,enable=1,be=true;
 
 Todo 
+// todo output the pinStr on digitalWrite
 support for multiple @analogRead, @digitalRead per pin, currently allows 1
-settings to control internal web services separate from access point
-output setting results to internal html page for realtime display 
+internal web services separate from access point
+
+more automatic command&control behavior patterns, examples:
+> @adCommand,in=analog,out=digital,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=high,isOff=low,time=10000,lastRun=0;
+-- > Get input from analog pin A0 every 10000 millis and when the analog value is between 1024 and 1000 then set digital pin 12 to high, else set to low when < 1000
+
+> @adCommand,in=digital,out=digital,pinIn=10,pinOut=12,highVal=1,lowVal=0,isOn=low,isOff=no,time=10000,lastRun=0;
+-- > Get input from digital pin 10 every 10000 millis and when the digital value is 0(low) then set digital pin 12 to 1 and never set pin 12 to 0(isOff=no)
+
+> If no wifi, internet, or backend server is available and a command expects it then alert via blink. Useful to troubleshoot on the fly
+
+backend server to dish out unique command per assigned individual or group of ESP nodes
+evaluate web services to support comms, now using a php script saving inbound data via GET arguments to a flat text file while working towards sql db
+
+authentication and authorization
 
 Native libraries 
 V 0.3
@@ -52,12 +66,12 @@ bool GetSetupConfig();
 // Global vars
 const String & hostUrl = "https://www.YourServerUrl.net/esp"; // 
 
-int loopInterval = 2000; // delay between action 
+String lastFiveSent[2][5]; // [1][x]=command,[0][x]=result, [2][x]=millis()?
+int loopInterval = 2000; // delay between action
 bool isDebugOut = true; //Enable verbose debug logging
-bool runOnce = false;
 bool enableAP = false; 
 bool autonomous; 
-String theStatus; // short status update for instant dashboard reporting? appends status?
+String theStatus; // system status for internal web server
 
 void setup() {
   Serial.begin(115200);
@@ -71,7 +85,6 @@ void setup() {
 
 void loop() {
   if ((WiFiMulti.run() == WL_CONNECTED)) {
-    if(runOnce != true) { diag(); runOnce = true; }
     RunCommands();
   }
   else
@@ -99,7 +112,9 @@ void UpdateSettings(String line)
       if (espSettings[i].indexOf(settingName) != -1)
       {
         Out("debug UpdateSettings update ", line);
-        // if incoming lastRun = 0 then set to 0, update lastRun cycle with millis if between 1-10, and set explicit if greater than 10
+        // Three states:0,1,2 : update to incoming lastrun = 0, update setting and keep previous last run, update setting and set lastrun to millis() 
+        // if incoming lastRun = 0 then set to 0, update lastRun cycle with millis if greater than 10, and set to previous lastRun if between 1-10 (This opens up some scenariotastic intervals)
+        // The server sends @update command with lastRUn value greater than 10 and then UpdateSettings sets the last run to the current run time
         if(line.indexOf("lastRun") > 0)
         {
           //String incomingLastRun1 = line.substring(line.indexOf("lastRun="),line.indexOf(";")); // @cmd,pin=1,time=1,lastRun=123;
@@ -110,16 +125,13 @@ void UpdateSettings(String line)
             Out("debug UpdateSettings incomingLastRun ", (String)incomingLastRun);
             espSettings[i] = line; //update existing setting
           }
-          else if(atoi(incomingLastRun.c_str()) < 10) // if less than 10 then continue with the current lastRun cycle, useful for update command so it's not continually cycling
+          else if(atoi(incomingLastRun.c_str()) < 10) // if less than 10 then set to the previous run as if the command didnt just run, this is useful to update the command setting without changing the actual run interval
           {
-           // long theTime = millis();
-           // espSettings[i] = line.substring(0,line.indexOf("lastRun="))+"lastRun="+theTime+";";
             String previousRun1 = espSettings[i].substring(espSettings[i].indexOf("lastRun="),espSettings[i].indexOf(";")); // @cmd,pin=1,time=1,lastRun=123;
             String previousRun = previousRun1.substring(previousRun1.indexOf("=")+1,previousRun1.indexOf(";")); //123
            espSettings[i] = line.substring(0,line.indexOf("lastRun=")) + "lastRun="+previousRun+";";
-           
           }
-          else //else update LastRun with incoming // incoming last run greater than 10 indicates we want to change it now
+          else //else update LastRun with the current millis // incoming last run greater than 10 indicates we want to change it to now as it just ran or otherwise
           {
             Out("debug UpdateSettings incomingLastRun > 10 ", (String)incomingLastRun);
             long theTime = millis();
@@ -148,6 +160,7 @@ void UpdateSettings(String line)
   }
 }
 
+int sendDataCount=0;
 void SendData(String command, String data)
 {
     Out("debug SendData command",command);
@@ -156,6 +169,10 @@ void SendData(String command, String data)
     String chipID = (String)ESP.getChipId();
     String response = GetHttpResponse((dataUrl)+"?chipid="+chipID+"&cmd="+command+"&data="+data);
     Out("debug SendData response", response);
+    lastFiveSent[0][sendDataCount] = command;
+    lastFiveSent[1][sendDataCount] = data;
+    //lastFiveSent[2][sendDataCount] = (String)millis();
+    if(sendDataCount == 4) { sendDataCount = 0; } else { sendDataCount += 1;};
 }
 
 // can this logic be abstracted into a function ?
@@ -180,6 +197,7 @@ void initSettings()
   espSettings[1] = "@serialRead,enable=1;"; 
   espSettings[2] = "@debug,enable=1,be=false;";
   theStatus = "Initialized!";
+  lastFiveSent[0][0] = "";
   isSettingsInit = true;
 }
 
@@ -222,7 +240,7 @@ void RunCommands() {
                Out("debug RunCommands analogRead pinStr invalid : ", pinStr);
               }
             }
-            if(toRun.startsWith("@digitalRead")) // toRun : @digitalRead,pin=0,time=1000,lastrun=12345;
+            if(toRun.startsWith("@digitalRead")) // toRun : @digitalRead,pin=0,time=10000,lastrun=12345; 
             {
               String pinStr = GetSettingValue(toRun,"pin");
               String intervalStr = GetSettingValue(toRun,"time"); 
@@ -277,7 +295,7 @@ void RunCommands() {
               String beStr = GetSettingValue(toRun,"be");
               if(beStr == "true")
               {
-                if(!enableAP)
+                if(!enableAP) // if not false==true then enable ap
                 {
                   enableAP = true;
                   SetupAP();
@@ -308,9 +326,11 @@ void RunCommands() {
               if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
               {
                 Out("debug RunCommandsupdate ", "Running GetSetupConfig()");
+                // This is the only time where GetSetupConfig gets run it returns true when @update is included in the setup??? needs todo
                 if(GetSetupConfig())
                 {
-                  Out("debug RunCommands GetSetupConfig returned", "true");
+                  Out("RunCommands GetSetupConfig returned", "true");
+                  // The server sends @update command with lastRUn value greater than 10 and then UpdateSettings sets the last run to the current run time
                 }
                 else
                 {
@@ -347,8 +367,8 @@ void RunCommands() {
                   Out("RunCommands serialRead",readStr);
                   if(readStr.startsWith("@"))
                   {
+                    theStatus = "serial control!";
                     UpdateSettings(readStr);
-                    theStatus = "Configured by serial!"; // ??TODO??
                   }
                   else
                   {
@@ -391,26 +411,17 @@ String GetHttpResponse(String url) {
 }
 
 bool GetSetupConfig() {
-  bool toReturn = false;
+  bool toReturn = false; // returns true if @update is a setting returned from the server
   String chipID = (String)ESP.getChipId();
   String controlUrl = hostUrl + "/control.php/?chipid="+chipID;
   String payload = GetHttpResponse(controlUrl);
   Out("debug GetSetupConfig url", controlUrl);
   Out("debug GetSetupConfig payload", payload);
-
-  /* 
-    payload is a String
-    @aR,pin0,time3;
-    @dR,pin12,time3;
-    @update;
-    @debug;
-  */
   int loopLength = 0;
   int atIndex = 0;
   int semiIndex = 0;
   String subPayload = payload;
-  //calculate amount of lines in payload, add up the semicolon
-  String payloadTemp = payload; 
+  String payloadTemp = payload;  //calculate amount of lines in payload, add up the semicolon
   payloadTemp.replace(";","");
   int payloadLength = payload.length()-payloadTemp.length();
 
@@ -430,22 +441,17 @@ bool GetSetupConfig() {
       atIndex = subPayload.indexOf("@");
       semiIndex = subPayload.indexOf(";");
     }
-    //Out("deubg GetSetupConfig atIndex",(String)atIndex);
-    //Out("deubg GetSetupConfig semiIndex",(String)semiIndex);
-    //Out("deubg GetSetupConfig subPayload",(String)subPayload);
-
     // at index should always be 1, semiIndex should always be the length of the string, the last entry may or may not have a ; (lol)
     String theCmd = subPayload.substring(atIndex,semiIndex+1);
 
-    if(theCmd.indexOf("@update") != -1)  // if the command is not update then toReturn is true? I know I put this here for some reason though... todo
+    if(theCmd.indexOf("@update") != -1)  // if the command is update then the server is updating @update. Used in RunSettings @update to check if @update needs UpdateSettings for LastRun
     {
       toReturn = true; 
     }
     if(theCmd.indexOf("@") == 0) // every setting must start with @, if >= or otherwise then its broken setting, could also check for trailing ; while we're here
     {
       UpdateSettings(theCmd);
-      theStatus = "Configured by server!";
-      toReturn = true;
+      theStatus = "Server conf!";
     }
     else
     {
