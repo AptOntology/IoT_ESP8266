@@ -429,7 +429,6 @@ void RunCommands()
               {
                 if(!(isAnalogBelowHigh)) 
                 {
-                  // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),HIGH);
                    Out("debug adCommand setting pin high", pinOutStr);
@@ -448,7 +447,6 @@ void RunCommands()
               {
                 if(isAnalogBelowHigh && isAnalogAboveLow)
                 {
-                  // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),HIGH);
                   Out("debug adCommand setting pin high", pinOutStr);
@@ -474,11 +472,10 @@ void RunCommands()
                    Out("debug adCommand setting pin low", pinOutStr);
                 }
               }
-              else if (isOnStr == "between")
+              else if (isOffStr == "between")
               {
                 if(isAnalogBelowHigh && isAnalogAboveLow)
                 {
-                  // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),LOW);
                    Out("debug adCommand setting pin low", pinOutStr);
