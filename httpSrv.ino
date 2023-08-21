@@ -39,7 +39,7 @@ void setuphttpSrv()
 
 void LoophttpSrv()
 {
-  setuphttpSrv();
+//  setuphttpSrv(); // perf gain by not ensuring setup each request?
   server.handleClient();
 }
 
@@ -101,6 +101,17 @@ void handleRoot() {
 void handleControl()
 {
   Out("debug handleControl serverarg0", (String)server.arg(0));
+  if(server.arg(0).indexOf("autoMode") >= 0)
+  {
+    if(autonomous)
+    {
+      autonomous = false; 
+    }
+    else
+    {
+      autonomous = true; 
+    }
+  }
   if(server.arg(0).indexOf("argsAnalogRead") >= 0)
   {
     Out("debug handleControl argsAnalogRead arg 0", (String)server.arg(0));
@@ -133,15 +144,14 @@ void handleControl()
   }
   if(server.arg(0).indexOf("enableAP") >= 0)
   {
-    if(apInitialized)
+    if(!apInitialized) // if ap is not init then enable it 
     {
-      UpdateSettings("@AccessPoint,enable=1,be=false;");
+      UpdateSettings("@system,enable=1,accessPoint=1,time=10000,lastRun=0;"); 
     }
     else
     {
-      Out("debug handleControl enableAP", "true");
-      apInitialized = false;
-      UpdateSettings("@AccessPoint,enable=1,be=true;");
+      //apInitialized = false;
+      UpdateSettings("@system,enable=1,accessPoint=0,time=10000,lastRun=0;"); 
     }
   }
 
@@ -155,11 +165,11 @@ void handleControl()
   {
     if(isDebugOut)
     {
-      UpdateSettings("@debug,enable=1,be=false;");
+      UpdateSettings("@system,enable=1,debug=0,time=10000,lastRun=0;");
     }
     else
     {
-      UpdateSettings("@debug,enable=1,be=true;");
+      UpdateSettings("@system,enable=1,debug=1,time=10000,lastRun=0;");
     }
   }
   handleSettings();
@@ -180,7 +190,7 @@ void handleOutput()
     htmlOut += lastFiveSent[1][x];
     htmlOut += "</td>";
     //htmlOut += "</td><td>";
-    //htmlOut += lastFiveSent[2][x];
+    //htmlOut += lastFiveSent[2][x]; // todo the time 
     htmlOut += "</td>";
     htmlOut += "</tr>";
   }
@@ -193,6 +203,7 @@ void handleOutput()
 
 void handleInfo()
 {
+    //abstract htmlOut to a funtion?
     String htmlOut = getHead();
     htmlOut += "<table style='width:100%'><tbody>";
     htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
@@ -232,9 +243,12 @@ void handleInfo()
     htmlOut += "</td></tr>";
     //htmlOut += "<tr><td>getCycleCount</td><td> ";
     /*htmlOut += (String)ESP.getCycleCount();
-    htmlOut += "</td></tr>";*/
+    htmlOut += "</td></tr>";
     htmlOut += "<tr><td>checkFlashCRC</td><td> ";
     htmlOut += (String)ESP.checkFlashCRC();
+    htmlOut += "</td></tr>";*/
+    htmlOut += "<tr><td>FreeSketchSpace</td><td> ";
+    htmlOut += (String)ESP.getFreeSketchSpace();
     htmlOut += "</td></tr>";
     htmlOut += "<tr><td>checkFlashConfig</td><td> ";
     htmlOut += (String)ESP.checkFlashConfig();
@@ -242,7 +256,7 @@ void handleInfo()
     htmlOut += "<tr><td>ResetInfo</td><td> ";
     htmlOut += (String)ESP.getResetInfo();
     htmlOut += "</td></tr>";
-
+    //WiFi.softAPDhcpServer();
     /*
     htmlOut += "<tr><td>Random</td><td> ";
     htmlOut += (String)ESP.random();
@@ -326,6 +340,15 @@ void handleSettings() { //can we refresh this page?
   {
     htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable AP</a></th> <th>Enable Access Point</th></tr>";
   }
+
+  if(autonomous)
+  {
+    htmlOut += "<tr><th><a href='/control.html?arg=autoMode'>Linear mode</a></th> <th>Follow along</th></hr>";
+  }
+  else
+  {
+    htmlOut += "<tr><th><a href='/control.html?arg=autoMode'>Autonomous</a></th> <th>lol</th></hr>";
+  }
   //htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
   htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
 
@@ -335,7 +358,7 @@ void handleSettings() { //can we refresh this page?
   htmlOut += "<form action='/control.html' method='get'>";
   htmlOut += "Setting: <input type='text' name='Command:'>";
   htmlOut += "<input type='submit' value='Set'></form>";
-  htmlOut += "</th><th>Format: @Setting,enable=1,time=1000,lastRun=0;</th></tr>";
+  htmlOut += "</th><th>Format: @Setting,enable=1,time=10000,lastRun=0;</th></tr>";
   if ((WiFi.status() == WL_CONNECTED))
   {
     //htmlOut += "<tr><th><a href='/control.html?arg=update'>Get ROM update</a></th> <th>Apply ROM and settings update</th></tr>";
@@ -437,8 +460,16 @@ void handleConnectWifi() {
    Out("handleConnectWifi", server.arg(0));
    Out("handleConnectWifi", server.arg(1));
    WiFi.disconnect();
-   WiFiMulti.addAP((server.arg(0)).c_str());
-   setup();
+   WiFiMulti.cleanAPlist();
+   if(server.arg(1).length() > 1)
+   {
+    WiFiMulti.addAP((server.arg(0)).c_str(),server.arg(1).c_str());
+   }
+   else
+   {
+    WiFiMulti.addAP((server.arg(0)).c_str());
+   }
+   WiFi.reconnect();
    delay(300); //rest easy
    handleRoot(); 
 }
