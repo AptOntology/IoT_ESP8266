@@ -22,25 +22,25 @@
 
 #### Digital input to digital output
 - Example (trigger): Get input from digital pin 10 every 10000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when digital read is 0 do nothing(isOff=no)
--   @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,lastRun=0;
+-         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,lastRun=0;
 
 - Example (flopflip): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 0(low) and when the digial read is 0(low) then set digital pin 12 to 1(high)
--   @adCommand,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
+-         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
 
 - Example (On then On, Off then off): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when the digial read is 0(low) then set digital pin 12 to 0(low)
--   @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=low,time=1000,lastRun=0;
+-         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=low,time=1000,lastRun=0;
 
 #### analogRead send data to server on interval 
-- @analogRead,enable=1,pin=A0,time=30000,lastRun=0;
+-         @analogRead,enable=1,pin=A0,time=30000,lastRun=0;
 
 #### digitalRead send data to server on interval 
-- @digitalRead,enable=1,pin=12,time=30000,lastRun=0;
+-         @digitalRead,enable=1,pin=12,time=30000,lastRun=0;
 
 #### digitalWrite set a pin to HIGH or LOW 
-- @digitalWrite,enable=1,pin=12,type=HIGH,time=1000,lastrun=0;
+-         @digitalWrite,enable=1,pin=12,type=HIGH,time=1000,lastrun=0;
 
 #### Update the settings from the server on interval
-- @update,enable=1,time=300000,lastRun=0;
+-         @update,enable=1,time=300000,lastRun=0;
 
 #### Initial setting: 
 - System command enable update on interval, serialRead, internal http server, set loop interval to 1000
