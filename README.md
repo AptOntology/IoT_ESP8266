@@ -44,6 +44,7 @@
 
 #### Initial setting: 
 - System command enable update on interval, serialRead, internal http server, set loop interval to 1000
--         @system
+-         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
+
 
 
