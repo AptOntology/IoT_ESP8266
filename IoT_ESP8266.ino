@@ -10,59 +10,49 @@ Initial Settings:
 @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
 
 Supported Settings
-analog input to digital output, supports isOn/isOff in states overHigh, underLow, and between the highVal and lowVal
-Example (On over highVal, off under lowVal) : @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1000,lowVal=500,isOn=overHigh,isOff=underLow,time=10000,lastRun=0;
-        -- > Get input from analog pin in A0 every 10000 millis and when analog value is above 1000 then set digital pin out 12 to high, if below 500 then set pin 12 to low
-
-Example (On between, off when under minimum) : @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
-        -- > Get input from analog pin in A0 every 10000 millis and when analog value is between 1024 and 1000 then set digital pin out 12 to high, else set to low when < 1000
+analog input to digital output
+isOn/isOff in states overHigh, underLow, overUnder, and between the highVal and lowVal, if isOn(on) elseif isOff(off)
+Example (On over highVal, off under lowVal) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1000,lowVal=500,isOn=overHigh,isOff=underLow,time=10000,lastRun=0;
+Example (On between, off when under minimum) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
+Example (On between, off over high and under low) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=800,lowVal=400,isOn=between,isOff=overUnder,time=1000,lastRun=0;
 
 digital input to digital output:
-Example (trigger): @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,lastRun=0;
-        -- > Get input from digital pin 10 every 10000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when digital read is 0 do nothing(isOff=no)
+Example (trigger): @sampleExecute,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,lastRun=0;
+Example (flopflip): @sampleExecute,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
 
-Example (flopflip): @adCommand,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
-        -- > Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 0(low) and when the digial read is 0(low) then set digital pin 12 to 1(high)
-
-@analogRead,enable=1,pin=A0,time=30000,lastRun=0;
+@analogRead,enable=1,pin=A0,returnMaxMin=1,time=100000,lastRun=0;
 @digitalRead,enable=1,pin=12,time=30000,lastRun=0;
 @digitalWrite,enable=1,pin=12,type=HIGH,time=1000,lastrun=0;
 @SendStatus,enable=1,net=1,sys=1,time=10000,lastRun=0;
-@system,enable=1,newLoop=500,accessPoint=1,httpSrv=1,update=200000,debug=0,serialRead=0,time=100000,lastRun=0; // production mode?
-@net, // todo 
+@system,enable=1,newLoop=500,accessPoint=0,httpSrv=0,update=200000,debug=0,serialRead=0,time=100000,lastRun=0; // production mode?
+@net,mdns=1,ssdp=1,llmnr=1,dnsHost=1 // todo, dnsHost cmd to dish out the new hostURL when offline?
 @update,enable=1,time=300000,lastRun=0; //get update from http server
 @serialRead,enable=1; 
 
 Todo 
-mesh standalone mode, be dns server and dish out hostURL/control.php result and udp socket the result to the internet or just be standalone
-
 support for multiple @analogRead, @digitalRead per pin, currently allows 1, this will involve selecting the pin in UpdateSettings(), perhaps for each @setting with pin= 
 
 more automatic command&control behavior patterns
 
-If no initial wifi, scan for open ESP_ID### AP, connect, and run offline commands or possibly route packets through the esp AP if it's online, @receiveToSend command?
+mesh/standalone mode, be ap, dns, and http server and dish out hostURL/control.php result and udp socket the send result to the internet or just be standalone and send the result to output.html
+If no initial wifi, scan for open ESP_ID### AP, connect, and run commands function as usual. route packets through the esp AP if it's online
+New @receiveToSend command
 - meshing or pseudo meshing
 - TCP sockets send receive data vs http get request?
 - If no ESP_ID AP then become the sole AP
-- Change from open auth to each node having a known PSK?
-
-httpSrv <input forms 
-
-build net.ino 
+- Change from open auth to each node having a known or calcualted PSK
 
 device support
-i2s, spi
+GPIO, PWM, I2C, SPI
 
 backend server to dish out unique command per assigned individual or group of ESP nodes : control.php
 evaluate web services to support comms, now using a php script saving inbound data via GET arguments to a flat text file while working towards sql db : data.php
 result storage and html graphs
 
-modulation and demodulation
 authentication and authorization
 
 Native libraries 
-V 0.3
-
+V 0.4
 */
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -83,7 +73,7 @@ ESP8266WiFiMulti WiFiMulti;
 void initSettings(); // Adds initial settings to espSettings array
 String GetSettingValue(String toRun, String name); //Called from RunCommands, Takes in a @setting and name and returns the value
 String GetHttpResponse(String url); //returns string payload from http
-bool GetSetupConfig(); // Called from @update command in RunSettings
+bool GetUpdateFromHost(); // Called from @update command in RunSettings
 void UpdateSettings(String line); // Updates espSettings array when settings run or get setup
 void SendData(String command, String data); // Sends chipId, command, data to http get and adds to lastFiveSent[][] array
 void RunCommands(); // Main 
@@ -103,7 +93,7 @@ int programVersion = 1;
 String lastFiveSent[2][5]; // [1][x]=command,[0][x]=result, [2][x]=millis()?
 int loopInterval = 1000; // delay between action
 bool isDebugOut = true; //Enable verbose debug logging
-bool autonomous; 
+bool autonomous;
 bool apInitialized = false;
 bool isSettingsInit = false;; //initSettings()
 bool behttpSrv = false; //enabled through initsettings and @httpSrv cmd
@@ -131,8 +121,8 @@ void loop() {
   {
     // No WIfi? be autonomous AP for a while 
     isDebugOut = autonomous = true; 
-    SetupAP(true);
     theStatus = "No Wifi!";
+    SetupAP(true);
     RunCommands();
   }
   if(behttpSrv)
@@ -147,7 +137,6 @@ void initSettings()
 {
   espSettings[0] = "@system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;";
   theStatus = "Initialized.";
-  //lastFiveSent[0][0] = "";
   Out("debug initSettings IP", (String)WiFi.localIP().toString());
   isSettingsInit = true;
 }
@@ -177,13 +166,17 @@ String GetHttpResponse(String url) {
     HTTPClient https;
     if (https.begin(*client, url)) {  // HTTPS
       int httpCode = https.GET();
-      Out("debug GetHttpResponse httpCode 1: ", (String)httpCode);
-
-      // httpCode will be negative on error
+      //Out("debug GetHttpResponse httpCode 1: ", (String)httpCode);
       if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
           payload = https.getString();
-          Out("debug GetHttpResponse payload", payload);
+          if(payload.length() > 0) { 
+            Out("debug GetHttpResponse payload", payload);
+          }
+          else
+          {
+            Out("debug GetHttpResponse payload", "No payload received");
+          }
         }
       }
     }
@@ -194,13 +187,11 @@ String GetHttpResponse(String url) {
     return payload;
 }
 
-bool GetSetupConfig() {
-  bool toReturn = false; // returns true if @update is a setting returned from the server
+bool GetUpdateFromHost() {
+  bool toReturn = false; // returns true if @update is a setting returned from host
   String chipID = (String)ESP.getChipId();
   String controlUrl = hostUrl + "/control.php/?chipid="+chipID;
   String payload = GetHttpResponse(controlUrl);
-  Out("debug GetSetupConfig url", controlUrl);
-  Out("debug GetSetupConfig payload", payload);
   int loopLength = 0;
   int atIndex = 0;
   int semiIndex = 0;
@@ -208,9 +199,6 @@ bool GetSetupConfig() {
   String payloadTemp = payload;  //calculate amount of lines in payload, add up the semicolon
   payloadTemp.replace(";","");
   int payloadLength = payload.length()-payloadTemp.length();
-
-  Out("debug GetSetupConfig payloadLength", (String)payloadLength);
-
   while(loopLength <= payloadLength)
   {
     if(semiIndex == 0)  //first entry
@@ -225,7 +213,7 @@ bool GetSetupConfig() {
       atIndex = subPayload.indexOf("@");
       semiIndex = subPayload.indexOf(";");
     }
-    // at index should always be 1, semiIndex should always be the length of the string, the last entry may or may not have a ; (lol)
+    // at index should always be 1, semiIndex should always be the length of the string
     String theCmd = subPayload.substring(atIndex,semiIndex+1);
 
     if(theCmd.indexOf("@update") != -1)  // if the command is update then the server is updating @update. Used in RunSettings @update to check if @update needs UpdateSettings for LastRun
@@ -239,7 +227,7 @@ bool GetSetupConfig() {
     }
     else
     {
-      Out("debug GetSetupConfig invalid setting format", theCmd);
+      Out("debug GetUpdateFromHost invalid setting format", theCmd);
     }
 
     if(semiIndex == 0 || semiIndex == -1)
@@ -260,26 +248,25 @@ void UpdateSettings(String line)
       String settingName = line.substring(line.indexOf("@")+1, line.indexOf(","));
       if (espSettings[i].indexOf(settingName) != -1)
       {
-        Out("debug UpdateSettings update ", line);
         // Three states:0,1,2 : update to incoming lastrun = 0, update setting and keep previous last run, update setting and set lastrun to millis() 
-        // if incoming lastRun = 0 then set to 0, update lastRun cycle with millis if greater than 10, and set to previous lastRun if between 1-10 (This opens up some scenariotastic intervals)
+        // if incoming lastRun = 0 then set to 0, update lastRun to now millis() if greater than 10, and set to previous lastRun if between 1-10 (allowing to change settings and keep next run time)
         // The server sends @update command with lastRUn value greater than 10 and then UpdateSettings sets the last run to the current run time
         if(line.indexOf("lastRun") > 0)
         {
+          Out("debug UpdateSettings update ", line);
           String incomingLastRun = GetSettingValue(line,"lastRun");
           if(incomingLastRun == "0") // update as-is, runs on next interval
           {
-            Out("debug UpdateSettings incomingLastRun ", (String)incomingLastRun);
             espSettings[i] = line; //update existing setting
           }
           else if(atoi(incomingLastRun.c_str()) < 10) // if less than 10 then set to the previous run as though the command didnt run, this is useful to update the command setting without changing the actual run interval
           {
             String previousRun = GetSettingValue(espSettings[i],"lastRun");
+            //todo check for previousRun to be?
             espSettings[i] = line.substring(0,line.indexOf("lastRun=")) + "lastRun="+previousRun+";";
           }
           else //else update LastRun with the current millis // incoming last run greater than 10 indicates we want to change it to now as it just ran or otherwise
           {
-            //Out("debug UpdateSettings incomingLastRun > 10", (String)incomingLastRun);
             long theTime = millis();
             espSettings[i] = line.substring(0,line.indexOf("lastRun="))+"lastRun="+theTime+";";  
           }
@@ -342,7 +329,7 @@ void RunCommands()
             if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))  // Get time interval to run and last run time. If time to run then run
             {
               String analogValue = (String)analogRead(atoi(pinStr.c_str()));
-              Out("RunCommands",((String)"analogRead " + (String)pinStr + " value : " + analogValue));
+              Out("RunCommands",((String)"analogRead " + (String)pinStr + " maxMin : " + returnMaxMinStr + " value : " + analogValue));
               if(analogValue != "1024" && analogValue != "0")
               {
                 SendData("analogRead",analogValue);
@@ -364,7 +351,6 @@ void RunCommands()
           String pinStr = GetSettingValue(toRun,"pin");
           String intervalStr = GetSettingValue(toRun,"time"); 
           String lastRunStr = GetSettingValue(toRun,"lastRun");
-
           if(pinStr.length() >= 1 && pinStr.length() <= 1) // this must be =>1 and <=2
           {
             if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))  // Get time interval to run and last run time. If time to run then run
@@ -387,7 +373,6 @@ void RunCommands()
           String intervalStr = GetSettingValue(toRun,"time"); 
           String lastRunStr = GetSettingValue(toRun,"lastRun");
           String typeStr = GetSettingValue(toRun,"type");
-
           if(pinStr.length() >= 1 && pinStr.length() <= 1) // pin must be =>1 and <=2
           {
             if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))  // Get time interval to run and last run time. If time to run then run
@@ -409,48 +394,40 @@ void RunCommands()
             Out("debug RunCommands digitalWrite pinStr invalid : ", pinStr);
           }
         } 
-        if(toRun.startsWith("@adCommand")) // toRun @adCommand,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underlow,time=10000,lastRun=0;
+        if(toRun.startsWith("@sampleExecute")) // toRun @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underlow,time=10000,lastRun=0;
         {      
-          // @adCommand,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
+          // @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
           // -- > Get input from analog pin A0 every 10000 millis and when the analog value is between 1024 and 1000 then set digital pin 12 to high, else set to low when < 1000
           /* 
           isOn / isOff states
-          isOn=overHigh
-          isOn=underLow
-          isOn=between
-          isOn=no
-          isOff=overHigh
-          isOff=underLow
-          isOff=between
-          isOff=no
+          overHigh,underLow,overUnder,between
+          
           */      
           String inStr = GetSettingValue(toRun,"input");
           String pinInStr = GetSettingValue(toRun,"pinIn");
           String pinOutStr = GetSettingValue(toRun,"inOut");
           String hiValStr = GetSettingValue(toRun,"highVal");
           String loValStr = GetSettingValue(toRun,"lowVal");
-          String isOnStr = GetSettingValue(toRun,"time");
-          String isOffStr = GetSettingValue(toRun,"time");
+          String isOnStr = GetSettingValue(toRun,"isOn");
+          String isOffStr = GetSettingValue(toRun,"isOff");
           String intervalStr = GetSettingValue(toRun,"time");
           String lastRunStr = GetSettingValue(toRun,"lastRun");
           if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
           {
-            Out("debug RunCommandsupdate adCommand", "Running");
+            Out("debug RunCommandsupdate sampleExecute", "Running");
             if(inStr == "analog")
             {
               int analogValue = analogRead(atoi(pinInStr.c_str())); // 0 to 1024
               bool isAnalogBelowHigh = (analogValue < atoi(hiValStr.c_str())); 
               bool isAnalogAboveLow = (analogValue > atoi(loValStr.c_str())); 
-              Out("RunCommands adCommand analog",((String)analogValue + " : " + (String)isAnalogBelowHigh  + " " + (String)isAnalogAboveLow));
-              //Tri state on off
+              Out("RunCommands sampleExecute analog",((String)analogValue + " : " + (String)isAnalogBelowHigh  + " " + (String)isAnalogAboveLow));
               if(isOnStr == "overHigh")
               {
                 if(!(isAnalogBelowHigh)) 
                 {
-                  // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),HIGH);
-                   Out("debug adCommand setting pin high", pinOutStr);
+                  Out("debug sampleExecute setting pin high", pinOutStr);
                 }
               } 
               else if (isOnStr == "underLow")
@@ -459,28 +436,34 @@ void RunCommands()
                 {
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),HIGH);
-                   Out("debug adCommand setting pin high", pinOutStr);
+                  Out("debug sampleExecute setting pin high", pinOutStr);
+                }
+              }
+              else if(isOnStr == "overUnder")
+              {
+                if(!(isAnalogAboveLow) && !(isAnalogBelowHigh)) //below low, above high
+                {
+                  pinMode(atoi(pinOutStr.c_str()), OUTPUT);
+                  digitalWrite(atoi(pinOutStr.c_str()),HIGH);
+                  Out("debug sampleExecute setting pin high", pinOutStr);                 
                 }
               }
               else if (isOnStr == "between")
               {
                 if(isAnalogBelowHigh && isAnalogAboveLow)
                 {
-                  // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),HIGH);
-                  Out("debug adCommand setting pin high", pinOutStr);
+                  Out("debug sampleExecute setting pin high", pinOutStr);
                 }
-              }
-
-              // now turn off
-              if(isOffStr == "overHigh") // todo this allows off to occur for the same pin without logic to say hey this is the same pin that we just turned on
+              } 
+              else if(isOffStr == "overHigh") // first check for all isOn, if isOn then don't check for isOff, else if
               {
                 if(!(isAnalogBelowHigh))
                 {
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),LOW);
-                   Out("debug adCommand setting pin low", pinOutStr);
+                   Out("debug sampleExecute setting pin low", pinOutStr);
                 }
               }
               else if (isOffStr == "underLow")
@@ -489,7 +472,16 @@ void RunCommands()
                 {
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),LOW);
-                   Out("debug adCommand setting pin low", pinOutStr);
+                   Out("debug sampleExecute setting pin low", pinOutStr);
+                }
+              }
+              else if(isOnStr == "overUnder")
+              {
+                if(!(isAnalogAboveLow) && !(isAnalogBelowHigh)) //below low, above high
+                {
+                  pinMode(atoi(pinOutStr.c_str()), OUTPUT);
+                  digitalWrite(atoi(pinOutStr.c_str()),HIGH);
+                  Out("debug sampleExecute setting pin high", pinOutStr);                 
                 }
               }
               else if (isOffStr == "between")
@@ -499,7 +491,7 @@ void RunCommands()
                   // do it
                   pinMode(atoi(pinOutStr.c_str()), OUTPUT);
                   digitalWrite(atoi(pinOutStr.c_str()),LOW);
-                   Out("debug adCommand setting pin low", pinOutStr);
+                   Out("debug sampleExecute setting pin low", pinOutStr);
                 }
               }
             }
@@ -508,7 +500,7 @@ void RunCommands()
               //digital read
               pinMode(atoi(pinInStr.c_str()), INPUT);
               bool digitalValue = digitalRead(atoi(pinInStr.c_str()));
-              Out("RunCommands adCommand digital",((String)digitalValue));
+              Out("RunCommands sampleExecute digital",((String)digitalValue));
 
               if(isOnStr == "high")
               {
@@ -545,7 +537,7 @@ void RunCommands()
             {
               SendData("localIP", (String)WiFi.localIP().toString());
               SendData("gatewayIP", (String)WiFi.gatewayIP().toString());;
-              Out("RunCommands SendStatus", (String)"net");
+              Out("RunCommands SendStatus net", (String)WiFi.localIP().toString());
               updatedToRun += "net=1,";
             }
             else
@@ -564,12 +556,26 @@ void RunCommands()
               updatedToRun += "sys=0,";
             }
             if(intervalStr == "") { intervalStr = "45000";} // if no interval then set to 45 seconds
-            UpdateSettings(updatedToRun+"time="+intervalStr+"lastRun="+millis()+";");
+            UpdateSettings(updatedToRun+"time="+intervalStr+",lastRun="+millis()+";");
           }        
+        }
+        if(toRun.startsWith("@newServer")) // @newServer,host=http://server.com/esp;
+        {
+          String hostStr = GetSettingValue(toRun,"host");
+          if(hostStr.substring(hostStr.length()-1,hostStr.length()) == "/") //last char == / ?
+          {
+            Out("debug RunCommands newServer","Last char is /");
+            hostStr = hostStr.substring(0,hostStr.length()-1);
+          }
+          espSettings[i] = ""; //run once, a trigger setting
+
+          hostUrl = hostStr;
         }
         if(toRun.startsWith("@system")) // @system,enable=1,newLoop=1000,accessPoint=1,httpSrv=1,update=10000,debug=1,serialRead=1,time=100000,lastRun=0;
         {
           //todo keep all settings not changed 
+          // if setting comes in as @system,enable=1,accessPoint=1;
+          // keep previous settings and only add or update 1 in accessPoint
 
           String intervalStr = GetSettingValue(toRun,"time");
           String lastRunStr = GetSettingValue(toRun,"lastRun");
@@ -656,11 +662,11 @@ void RunCommands()
           String lastRunStr = GetSettingValue(toRun,"lastRun");
           if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
           {
-            Out("debug RunCommandsupdate ", "Running GetSetupConfig()");
+            Out("debug RunCommandsupdate ", "Running GetUpdateFromHost()");
             // Perhaps change the name to GetUpdate
-            if(GetSetupConfig())
+            if(GetUpdateFromHost())
             {
-              Out("RunCommands GetSetupConfig returned", "true");
+              Out("RunCommands GetUpdateFromHost returned", "true");
               // The server sends @update command with lastRUn value greater than 10 and then UpdateSettings sets the last run to the current run time, thus no UpdateSettings here
             }
             else
@@ -708,21 +714,27 @@ void SetupAP(bool beAP) {
     {
       apInitialized = true;
       WiFi.mode(WIFI_AP_STA);
-      //WiFi.disconnect();
       delay(50);
       WiFi.softAP(("ESP_" + (String)(ESP.getChipId())).c_str(), "");
       Out("debug SetupAP","AP Station mode");
     }
+    else
+    {
+      //Out("debug SetupAP","!AP, !BeAP");
+    }
   }
-  else
+  else if(apInitialized)
   {
     if(!beAP) // ap is init, beAP false
     {
       apInitialized = false;
       WiFi.mode(WIFI_STA);
-      //WiFi.disconnect();
       delay(50);
       Out("debug SetupAP","station mode");
+    }
+    else
+    {
+      //Out("debug SetupAP","AP, BeAP");
     }
   }
 }
