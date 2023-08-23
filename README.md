@@ -9,8 +9,8 @@
 ### Settings
 
 #### Analog input to digital output
-- Supports on/off in states overHigh, underLow, and between the analog highVal and lowVal
-  
+- isOn/isOff in states overHigh, underLow, overUnder, and between the highVal and lowVal, if isOn(on) elseif isOff(off)
+
 - Example (On between, off below minimum) Get input from analog pin in A0 every 10000 millis and when analog value is between 1024 and 1000 then set digital pin out 12 to high, else set to low when < 1000
 -         @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
 
@@ -19,6 +19,9 @@
 
 - Example (On below minimum, off above maximum) Get input from analog pin, when analog value is below 1000 then set digital pin out 12 to high, if above 1024 then set pin 12 to low.
 -         @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=underLow,isOff=aboveHigh,time=10000,lastRun=0;
+
+- Example (On between, off over high and under low)
+-         @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=800,lowVal=400,isOn=between,isOff=overUnder,time=1000,lastRun=0;
 
 #### Digital input to digital output
 - Example (trigger): Get input from digital pin 10 every 10000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when digital read is 0 do nothing(isOff=no)
