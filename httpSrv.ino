@@ -112,56 +112,62 @@ void handleControl()
       autonomous = true; 
     }
   }
-  if(server.arg(0).indexOf("argsAnalogRead") >= 0)
+  else if(server.arg(0).indexOf("argsAnalogRead") >= 0)
   {
     Out("debug handleControl argsAnalogRead arg 0", (String)server.arg(0));
     Out("debug handleControl argsAnalogRead arg 1", (String)server.arg(1));
     Out("debug handleControl argsAnalogRead arg 2", (String)server.arg(2));
     Out("debug handleControl argsAnalogRead arg 3", (String)server.arg(3)); //time
+    //
     UpdateSettings("@analogRead,enable="+(String)server.arg(2)+",pin="+(String)server.arg(1)+",time=" + (String)server.arg(3) + ",lastRun=0;");
     //Out("debug handleControl argsAnalogRead size", (String)(sizeof(server.arg) / sizeof(server.arg[0])));
   }
-    if(server.arg(0).indexOf("argsDigitalRead") >= 0)
+  else if(server.arg(0).indexOf("argsDigitalRead") >= 0)
   {
     Out("debug handleControl argsDigitalRead arg 0", (String)server.arg(0));
     Out("debug handleControl argsDigitalRead arg 1", (String)server.arg(1)); //pin
     Out("debug handleControl argsDigitalRead arg 2", (String)server.arg(2)); //enable
-    Out("debug handleControl argsDigitalRead arg 2", (String)server.arg(3)); //enable
+    Out("debug handleControl argsDigitalRead arg 3", (String)server.arg(3)); //time
     UpdateSettings("@digitalRead,enable="+(String)server.arg(2)+",pin="+(String)server.arg(1)+",time=" + (String)server.arg(3) + ",lastRun=0;");
     //Out("debug handleControl argsAnalogRead size", (String)(sizeof(server.arg) / sizeof(server.arg[0])));
   }
-  if(server.arg(0).indexOf("wifidisconnect") >= 0)
+  else if(server.arg(0).indexOf("wifidisconnect") >= 0)
   {
     WiFi.disconnect();
   }
-  if(server.arg(0).indexOf("resetHeap") >= 0)
+  else if(server.arg(0).indexOf("sendNetStatus") >= 0)
+  {
+    // todo, what if sys=1?
+    UpdateSettings("@sendStatus,net=1;");
+  }
+  else if(server.arg(0).indexOf("getUpdateNow") >= 0)
+  {
+    // todo, seems a bit janky if we reset the interval to a magic number here
+    UpdateSettings("@update,enable=1,time=10000,lastRun=0;");
+  }
+  else if(server.arg(0).indexOf("resetHeap") >= 0)
   {
     ESP.resetHeap();
   }
-  if(server.arg(0).indexOf("fullreset") >= 0)
+  else if(server.arg(0).indexOf("fullreset") >= 0)
   {
     ESP.reset();
   }
-  if(server.arg(0).indexOf("enableAP") >= 0)
+  else if(server.arg(0).indexOf("enableAP") >= 0)
   {
     if(!apInitialized) // if ap is not init then enable it 
     {
       UpdateSettings("@system,enable=1,accessPoint=1,time=10000,lastRun=0;"); 
     }
-    else
+  }
+  else if(server.arg(0).indexOf("disableAP") >= 0)
+  {
+    if(apInitialized) // if ap is init then disable it 
     {
-      //apInitialized = false;
       UpdateSettings("@system,enable=1,accessPoint=0,time=10000,lastRun=0;"); 
     }
   }
-
-  if(server.arg(0).indexOf("@") == 0) //
-  {
-    Out("handleControl",server.arg(0));
-    UpdateSettings(server.arg(0));
-  }
-
-  if(server.arg(0).indexOf("debug") >= 0) //
+  else if(server.arg(0).indexOf("debug") >= 0) //
   {
     if(isDebugOut)
     {
@@ -172,6 +178,11 @@ void handleControl()
       UpdateSettings("@system,enable=1,debug=1,time=10000,lastRun=0;");
     }
   }
+  else if(server.arg(0).indexOf("@") == 0) //
+  {
+    Out("handleControl",server.arg(0));
+    UpdateSettings(server.arg(0));
+  }
   handleSettings();
 }
 
@@ -180,7 +191,6 @@ void handleOutput()
   String htmlOut = getHead();
   htmlOut += "<table style='width:100%'><tbody>";
   htmlOut += "<tr><td><b>Command</b></td><td><b>Result</b></td><td></td></tr>";
- 
   for(int x=0; x<=4; x++) 
   {
     htmlOut += "<tr>";
@@ -190,7 +200,7 @@ void handleOutput()
     htmlOut += lastFiveSent[1][x];
     htmlOut += "</td>";
     //htmlOut += "</td><td>";
-    //htmlOut += lastFiveSent[2][x]; // todo the time 
+    //htmlOut += lastFiveSent[2][x]; // todo the time , causes reset?
     htmlOut += "</td>";
     htmlOut += "</tr>";
   }
@@ -203,7 +213,7 @@ void handleOutput()
 
 void handleInfo()
 {
-    //abstract htmlOut to a funtion?
+    //abstract htmlOut+= to a funtion? String out = addStr(out, "more str"); // String addStr(Str out, Str toAdd) {return out+=toAdd;}
     String htmlOut = getHead();
     htmlOut += "<table style='width:100%'><tbody>";
     htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
@@ -241,12 +251,6 @@ void handleInfo()
     htmlOut += "<tr><td>HeapFragmentation</td><td> ";
     htmlOut += (String)ESP.getHeapFragmentation();
     htmlOut += "</td></tr>";
-    //htmlOut += "<tr><td>getCycleCount</td><td> ";
-    /*htmlOut += (String)ESP.getCycleCount();
-    htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>checkFlashCRC</td><td> ";
-    htmlOut += (String)ESP.checkFlashCRC();
-    htmlOut += "</td></tr>";*/
     htmlOut += "<tr><td>FreeSketchSpace</td><td> ";
     htmlOut += (String)ESP.getFreeSketchSpace();
     htmlOut += "</td></tr>";
@@ -256,12 +260,6 @@ void handleInfo()
     htmlOut += "<tr><td>ResetInfo</td><td> ";
     htmlOut += (String)ESP.getResetInfo();
     htmlOut += "</td></tr>";
-    //WiFi.softAPDhcpServer();
-    /*
-    htmlOut += "<tr><td>Random</td><td> ";
-    htmlOut += (String)ESP.random();
-    htmlOut += "</td></tr>";
-    */
 
     htmlOut += "<tr><th>Wifi</th><th> </th>";
 
@@ -334,7 +332,7 @@ void handleSettings() { //can we refresh this page?
 
   if(apInitialized)
   {
-    htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Disable AP</a></th> <th>Disable Access Point</th></tr>";  
+    htmlOut += "<tr><th><a href='/control.html?arg=disableAP'>Disable AP</a></th> <th>Disable Access Point</th></tr>";  
   }
   else
   {
@@ -349,6 +347,10 @@ void handleSettings() { //can we refresh this page?
   {
     htmlOut += "<tr><th><a href='/control.html?arg=autoMode'>Autonomous</a></th> <th>lol</th></hr>";
   }
+
+  htmlOut += "<tr><th><a href='/control.html?arg=sendNetStatus'>Send net status</a></th> <th>Sends local and gateway IP to output</th></hr>";
+  htmlOut += "<tr><th><a href='/control.html?arg=getUpdateNow'>Get Update</a></th> <th>Gets update from server</th></hr>";
+
   //htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
   htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
 
@@ -371,6 +373,8 @@ void handleSettings() { //can we refresh this page?
   delay(30); //rest easy
   htmlOut += getFoot();
   server.send(200, "text/html", htmlOut);
+  delay(30); //rest easy
+
 }
 
 void handleScanNetworks() {
@@ -452,21 +456,23 @@ void handleScanNetworks() {
     htmlOut += "<BR><BR><a href='/control.html?arg=wifidisconnect'>Disconnect WiFi</a></th></tr>";
   }
   htmlOut += getFoot();
-  delay(30); //rest easy
   server.send(200, "text/html", htmlOut); 
+  delay(30); //rest easy
 }
 
 void handleConnectWifi() {
-   Out("handleConnectWifi", server.arg(0));
-   Out("handleConnectWifi", server.arg(1));
+   Out("debug handleConnectWifi arg0", server.arg(0));
+   Out("debug handleConnectWifi arg1", server.arg(1));
    WiFi.disconnect();
    WiFiMulti.cleanAPlist();
    if(server.arg(1).length() > 1)
    {
+    Out("debug handleConnectWifi adding, with psk", server.arg(0));
     WiFiMulti.addAP((server.arg(0)).c_str(),server.arg(1).c_str());
    }
    else
    {
+    Out("debug handleConnectWifi adding, no psk", server.arg(0));
     WiFiMulti.addAP((server.arg(0)).c_str());
    }
    WiFi.reconnect();
