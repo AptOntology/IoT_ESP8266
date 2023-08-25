@@ -145,6 +145,13 @@ void handleControl()
     // todo, seems a bit janky if we reset the interval to a magic number here
     UpdateSettings("@update,enable=1,time=10000,lastRun=0;");
   }
+  else if(server.arg(0).indexOf("resetSettings") >= 0)
+  {
+    for (int i = 0; i < (sizeof(espSettings) / sizeof(espSettings[0])); i++)
+    {
+      espSettings[i] = "";
+    }
+  }
   else if(server.arg(0).indexOf("resetHeap") >= 0)
   {
     ESP.resetHeap();
@@ -350,9 +357,10 @@ void handleSettings() { //can we refresh this page?
 
   htmlOut += "<tr><th><a href='/control.html?arg=sendNetStatus'>Send net status</a></th> <th>Sends local and gateway IP to output</th></hr>";
   htmlOut += "<tr><th><a href='/control.html?arg=getUpdateNow'>Get Update</a></th> <th>Gets update from server</th></hr>";
-
-  //htmlOut += "<tr><th><a href='/control.html?arg=resetHeap'>Reset Heap</a></th> <th>lol</th></hr>";
-  htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
+  htmlOut += "<tr><th><a href='/control.html?arg=resetSettings'>Reset settings</a></th> <th>Reset settings to empty</th></hr>";
+  
+  
+   htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
 
   // ADD NEXT SETTING ABOVE : 
   htmlOut += "<tr><tr> <th></tr>";
