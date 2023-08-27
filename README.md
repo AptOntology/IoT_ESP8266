@@ -2,11 +2,17 @@
 ## Just another ESP8266 IOT sensor node
 
 1. Connects to wifi
-2. Gets settings from either initial hardcoded, serial input, internal web site input, or internet HTTP server
-3. Run the settings on the given inverval
-4. If no wifi then become access point for local control
+2. If no wifi then be access point
+3. Gets settings from either initial hardcoded, serial input, internal web site input, or internet HTTP server
+4. Run the settings on the given inverval
 
 ### Settings
+
+#### lastRun switch : 
+ - 0 is runNow and update lastRun to now
+ - 1 is runOnce and set enable=0
+ - 2-10 is update setting and keep the previous lastRun
+ - above 10 is to run on interval and update lastRun to now
 
 #### Analog input to digital output
 - isOn/isOff in states overHigh, underLow, overUnder, and between the highVal and lowVal, if isOn(on) elseif isOff(off)
@@ -48,6 +54,3 @@
 #### Initial setting: 
 - System command enable update on interval, serialRead, internal http server, set loop interval to 1000
 -         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
-
-
-
