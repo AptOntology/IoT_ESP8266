@@ -85,7 +85,7 @@ void setupNet();
 void loopNet();
 
 //Global variables
-String hostUrl = "https://www.tech-galaxy.net/esp"; // 
+String hostUrl = "https://www.YourServerUrl.com/esp"; // 
 
 float programVersion = 0.01;
 String sendDataOut[3][20]; // [0][x]=command,[1][x]=result, [2][x]=millis()
