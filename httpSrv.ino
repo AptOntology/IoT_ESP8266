@@ -39,7 +39,6 @@ void setuphttpSrv()
 
 void LoophttpSrv()
 {
-//  setuphttpSrv(); // perf gain by not ensuring setup each request?
   server.handleClient();
 }
 
@@ -100,34 +99,19 @@ void handleRoot() {
 
 void handleControl()
 {
-  Out("debug handleControl serverarg0", (String)server.arg(0));
-  if(server.arg(0).indexOf("autoMode") >= 0)
+  Out("debug handleControl arg 0", (String)server.arg(0));
+  Out("debug handleControl arg 1", (String)server.arg(1)); //pin
+  Out("debug handleControl arg 2", (String)server.arg(2)); //enable
+  Out("debug handleControl arg 3", (String)server.arg(3)); //time
+  theStatus = "http config";
+
+  if(server.arg(0).indexOf("argsAnalogRead") >= 0)
   {
-    if(autonomous)
-    {
-      autonomous = false; 
-    }
-    else
-    {
-      autonomous = true; 
-    }
-  }
-  else if(server.arg(0).indexOf("argsAnalogRead") >= 0)
-  {
-    Out("debug handleControl argsAnalogRead arg 0", (String)server.arg(0));
-    Out("debug handleControl argsAnalogRead arg 1", (String)server.arg(1));
-    Out("debug handleControl argsAnalogRead arg 2", (String)server.arg(2));
-    Out("debug handleControl argsAnalogRead arg 3", (String)server.arg(3)); //time
-    //
     UpdateSettings("@analogRead,enable="+(String)server.arg(2)+",pin="+(String)server.arg(1)+",time=" + (String)server.arg(3) + ",lastRun=0;");
     //Out("debug handleControl argsAnalogRead size", (String)(sizeof(server.arg) / sizeof(server.arg[0])));
   }
   else if(server.arg(0).indexOf("argsDigitalRead") >= 0)
   {
-    Out("debug handleControl argsDigitalRead arg 0", (String)server.arg(0));
-    Out("debug handleControl argsDigitalRead arg 1", (String)server.arg(1)); //pin
-    Out("debug handleControl argsDigitalRead arg 2", (String)server.arg(2)); //enable
-    Out("debug handleControl argsDigitalRead arg 3", (String)server.arg(3)); //time
     UpdateSettings("@digitalRead,enable="+(String)server.arg(2)+",pin="+(String)server.arg(1)+",time=" + (String)server.arg(3) + ",lastRun=0;");
     //Out("debug handleControl argsAnalogRead size", (String)(sizeof(server.arg) / sizeof(server.arg[0])));
   }
@@ -135,15 +119,13 @@ void handleControl()
   {
     WiFi.disconnect();
   }
-  else if(server.arg(0).indexOf("sendNetStatus") >= 0)
+  else if(server.arg(0).indexOf("sendStatus") >= 0)
   {
-    // todo, what if sys=1?
-    UpdateSettings("@sendStatus,net=1;");
+    UpdateSettings("@sendStatus,net=1,sys=1;");
   }
   else if(server.arg(0).indexOf("getUpdateNow") >= 0)
   {
-    // todo, seems a bit janky if we reset the interval to a magic number here
-    UpdateSettings("@update,enable=1,time=10000,lastRun=0;");
+    UpdateSettings("@update,enable=1,lastRun=0;");
   }
   else if(server.arg(0).indexOf("resetSettings") >= 0)
   {
@@ -164,25 +146,25 @@ void handleControl()
   {
     if(!apInitialized) // if ap is not init then enable it 
     {
-      UpdateSettings("@system,enable=1,accessPoint=1,time=10000,lastRun=0;"); 
+      UpdateSettings("@system,enable=1,accessPoint=1,lastRun=1;"); 
     }
   }
   else if(server.arg(0).indexOf("disableAP") >= 0)
   {
     if(apInitialized) // if ap is init then disable it 
     {
-      UpdateSettings("@system,enable=1,accessPoint=0,time=10000,lastRun=0;"); 
+      UpdateSettings("@system,enable=1,accessPoint=0,lastRun=1;"); 
     }
   }
   else if(server.arg(0).indexOf("debug") >= 0) //
   {
     if(isDebugOut)
     {
-      UpdateSettings("@system,enable=1,debug=0,time=10000,lastRun=0;");
+      UpdateSettings("@system,enable=1,debug=0,lastRun=1;");
     }
     else
     {
-      UpdateSettings("@system,enable=1,debug=1,time=10000,lastRun=0;");
+      UpdateSettings("@system,enable=1,debug=1,lastRun=1;");
     }
   }
   else if(server.arg(0).indexOf("@") == 0) //
@@ -197,17 +179,17 @@ void handleOutput()
 {
   String htmlOut = getHead();
   htmlOut += "<table style='width:100%'><tbody>";
-  htmlOut += "<tr><td><b>Command</b></td><td><b>Result</b></td><td></td></tr>";
+  htmlOut += "<tr><td><b>Command</b></td><td><b>Result</b></td><td>Time</td></tr>";
   for(int x=0; x<=4; x++) 
   {
     htmlOut += "<tr>";
     htmlOut += "<td>";
-    htmlOut += lastFiveSent[0][x];
+    htmlOut += sendDataOut[0][x];
     htmlOut += "</td><td>";
-    htmlOut += lastFiveSent[1][x];
+    htmlOut += sendDataOut[1][x];
     htmlOut += "</td>";
-    //htmlOut += "</td><td>";
-    //htmlOut += lastFiveSent[2][x]; // todo the time , causes reset?
+    htmlOut += "</td><td>";
+    htmlOut += sendDataOut[2][x];
     htmlOut += "</td>";
     htmlOut += "</tr>";
   }
@@ -220,7 +202,6 @@ void handleOutput()
 
 void handleInfo()
 {
-    //abstract htmlOut+= to a funtion? String out = addStr(out, "more str"); // String addStr(Str out, Str toAdd) {return out+=toAdd;}
     String htmlOut = getHead();
     htmlOut += "<table style='width:100%'><tbody>";
     htmlOut += "<tr><td><b>Description</b></td><td><b>Details</b></td></tr>";
@@ -322,7 +303,7 @@ void handleInfo()
     delay(30); //rest easy
 }
 
-void handleSettings() { //can we refresh this page?
+void handleSettings() {
   String htmlOut = getHead();
  // htmlOut += "<meta http-equiv='refresh' content='15'>";
   htmlOut += "<table style='width:100%'><tbody>";
@@ -339,46 +320,45 @@ void handleSettings() { //can we refresh this page?
 
   if(apInitialized)
   {
-    htmlOut += "<tr><th><a href='/control.html?arg=disableAP'>Disable AP</a></th> <th>Disable Access Point</th></tr>";  
+    htmlOut += "<tr><th><a href='/control.html?arg=disableAP'>Enable client</a></th> <th>Disable Access Point</th></tr>";  
   }
   else
   {
-    htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable AP</a></th> <th>Enable Access Point</th></tr>";
+    htmlOut += "<tr><th><a href='/control.html?arg=enableAP'>Enable Access Point</a></th> <th>Enable Access Point</th></tr>";
   }
 
-  if(autonomous)
-  {
-    htmlOut += "<tr><th><a href='/control.html?arg=autoMode'>Linear mode</a></th> <th>Follow along</th></hr>";
-  }
-  else
-  {
-    htmlOut += "<tr><th><a href='/control.html?arg=autoMode'>Autonomous</a></th> <th>lol</th></hr>";
-  }
+  htmlOut += "<tr><th><a href='/control.html?arg=sendStatus'>Send status</a></th> <th>Send network and system details to output</th></hr>";
 
-  htmlOut += "<tr><th><a href='/control.html?arg=sendNetStatus'>Send net status</a></th> <th>Sends local and gateway IP to output</th></hr>";
-  htmlOut += "<tr><th><a href='/control.html?arg=getUpdateNow'>Get Update</a></th> <th>Gets update from server</th></hr>";
+  htmlOut += "<tr><th><a href='/control.html?arg=getUpdateNow'>Get Update</a></th> <th>Get update from server</th></hr>";
   htmlOut += "<tr><th><a href='/control.html?arg=resetSettings'>Reset settings</a></th> <th>Reset settings to empty</th></hr>";
-  
-  
-   htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
+  htmlOut += "<tr><th><a href='/scan.html'>WiFi</a></th></tr>";
 
-  // ADD NEXT SETTING ABOVE : 
-  htmlOut += "<tr><tr> <th></tr>";
-  htmlOut += "<tr><th>";
-  htmlOut += "<form action='/control.html' method='get'>";
-  htmlOut += "Setting: <input type='text' name='Command:'>";
-  htmlOut += "<input type='submit' value='Set'></form>";
-  htmlOut += "</th><th>Format: @Setting,enable=1,time=10000,lastRun=0;</th></tr>";
   if ((WiFi.status() == WL_CONNECTED))
   {
     //htmlOut += "<tr><th><a href='/control.html?arg=update'>Get ROM update</a></th> <th>Apply ROM and settings update</th></tr>";
   }
 
+  // ADD NEXT SETTING ABOVE : 
+  htmlOut += "</tbody></table>";
+
+  
+  htmlOut += "<table style='width:100%'><tbody>";
+  htmlOut += "<tr><th><b>Control</b></th></tr>";
+
+  // analog/digital control form
   htmlOut += "<tr><th>";
   htmlOut += "<form action='/control.html' method = 'GET' id='carform'> Setting :<select name='cmd' form='carform'> <option value='argsAnalogRead'>analog</option> <option value='=argsDigitalRead'>digital</option> </select>Pin : <select name='Pin' form='carform'> <option value='4'>4 (SDA)</option> <option value='5'>5 (SDL)</option> <option value='12'>12 (MISO)</option><option value='13'>13 (MOSI)</option><option value='14'>14 (CLK)</option><option value='A0'>Analog 0</option></select>Enable :<select name='Enable' form='carform'> <option value='1'>True</option> <option value='0'>False</option></select>   Time:<input type='text' name='Time:'>  <input type='submit' value='Submit'></form>";
   htmlOut += "</th></tr>";
+
+    // Manual command text box
+  htmlOut += "<tr><th>";
+  htmlOut += "<form action='/control.html' method='get'>";
+  htmlOut += "Setting: <input type='text' name='Command:'>";
+  htmlOut += "<input type='submit' value='Set'></form>";
+  htmlOut += "</th><th>";
   htmlOut += "</tbody></table>";
-  delay(30); //rest easy
+
+
   htmlOut += getFoot();
   server.send(200, "text/html", htmlOut);
   delay(30); //rest easy
