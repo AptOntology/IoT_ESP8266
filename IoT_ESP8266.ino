@@ -405,7 +405,7 @@ void RunCommands() {
           {
             String pinStr = GetSettingValue(toRun,"pin");
             String typeStr = GetSettingValue(toRun,"type");
-            if(pinStr.length() >= 1 && pinStr.length() <= 1) // pin must be =>1 and <=2
+            if(pinStr.length() >= 1 && pinStr.length() <= 2) // pin must be =>1 and <=2
             {
               if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))  // Get time interval to run and last run time. If time to run then run
               {
