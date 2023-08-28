@@ -43,10 +43,10 @@
 - Example (Relay): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when the digial read is 0(low) then set digital pin 12 to 0(low)
 -         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=low,time=1000,lastRun=0;
 
-#### analogRead send data to server on interval 
--         @analogRead,enable=1,pin=A0,time=30000,lastRun=0;
+#### analogRead pin A0 every 100000 millis and send data to output, no return for 1024 or 0
+-         @analogRead,enable=1,pin=A0,returnMaxMin=0,time=100000,lastRun=0;
 
-#### digitalRead send data to server on interval 
+#### digitalRead pin 12 every 30000 millis and send data to output 
 -         @digitalRead,enable=1,pin=12,time=30000,lastRun=0;
 
 #### digitalWrite set a pin to HIGH or LOW 
