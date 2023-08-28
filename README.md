@@ -9,8 +9,8 @@
 ### Settings
 
 #### Initial setting: 
-- System command enable update on interval, serialRead, internal http server, set loop interval to 1000
--         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
+- System command: loop delay to 1000 millis, internal web server enabled, get update from http every 200000 millis, enable serial debugger, enable serial read, lastRun=1(runOnce)
+-         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=1;
 
 #### the lastRun switch : 
  - 0 is runNow and update lastRun to now
