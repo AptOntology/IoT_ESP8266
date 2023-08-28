@@ -15,19 +15,22 @@ ESP8266WebServer HTTPnet(8080); //ssdp
 
 void setupNet()
 {
-   LLMNR.begin(((String)ESP.getChipId()).c_str());
-  Serial.println("LLMNR responder started");
+  LLMNR.begin(((String)ESP.getChipId()).c_str());
+  Out("LLMNR responder",(String)LLMNR.status());
 
-    // Init the (currently empty) host domain string with chipid
-  MDNS.begin((String)ESP.getChipId());
+  MDNS.end();
+  MDNS.begin((String)WiFi.getHostname());
   MDNS.addService("http", "tcp", 80);
+  MDNS.addServiceTxt("http", "tcp", "/", "http://"+(String)WiFi.localIP().toString());
   Serial.println("MDNS responder started");
 
-  NBNS.begin(((String)ESP.getChipId()).c_str());
+  NBNS.begin(((String)WiFi.getHostname()).c_str());
+  NBNS.
+  Serial.println("NBNS responder started");
 
 //ssdp
     HTTPnet.on("/", HTTP_GET, []() {
-      //HTTPnet.send(200, "text/plain", "network on!");
+      HTTPnet.send(200, "text/plain", "on!");
     });
     HTTPnet.on("/description.xml", HTTP_GET, []() {
       SSDP.schema(HTTPnet.client());
@@ -35,14 +38,14 @@ void setupNet()
     HTTPnet.begin();
     SSDP.setSchemaURL("description.xml");
     SSDP.setHTTPPort(8080);
-    SSDP.setName("Philips hue clone");
+    SSDP.setName("ESP8266 client");
     SSDP.setSerialNumber("001788102201");
-    SSDP.setURL("index.html");
-    SSDP.setModelName("Philips hue bridge 2012");
+    SSDP.setURL("/");
+    SSDP.setModelName("ESP8266");
     SSDP.setModelNumber("929000226503");
-    SSDP.setModelURL("http://www.meethue.com");
-    SSDP.setManufacturer("Royal Philips Electronics");
-    SSDP.setManufacturerURL("http://www.philips.com");
+    SSDP.setModelURL("http://www.myURL");
+    SSDP.setManufacturer("Espressif");
+    SSDP.setManufacturerURL("http://www.espressif.com");
     SSDP.begin();
 //end ssdp
 }
