@@ -25,7 +25,6 @@ void setupNet()
   Serial.println("MDNS responder started");
 
   NBNS.begin(((String)WiFi.getHostname()).c_str());
-  NBNS.
   Serial.println("NBNS responder started");
 
 //ssdp
