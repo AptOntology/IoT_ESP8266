@@ -3,12 +3,16 @@
 
 1. Connects to wifi
 2. If no wifi then be access point
-3. Gets settings from either initial hardcoded, serial input, internal web site input, or internet HTTP server
-4. Run the settings on the given inverval
+3. Initialize settings then get from either serial input, internal web server form, or HTTPS server
+4. Run the settings on inverval
 
 ### Settings
 
-#### lastRun switch : 
+#### Initial setting: 
+- System command enable update on interval, serialRead, internal http server, set loop interval to 1000
+-         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
+
+#### the lastRun switch : 
  - 0 is runNow and update lastRun to now
  - 1 is runOnce and set enable=0
  - 2-10 is update setting and keep the previous lastRun
@@ -51,6 +55,11 @@
 #### Update the settings from the server on interval
 -         @update,enable=1,time=300000,lastRun=0;
 
-#### Initial setting: 
-- System command enable update on interval, serialRead, internal http server, set loop interval to 1000
--         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=0;
+#### Send network and system details to output
+-         @sendStatus,enable=1,net=1,sys=1,time=10000,lastRun=1; 
+
+#### Enable network announce services
+-         @network,mdns=1,ssdp=1,llmnr=1,lastRun=1;
+
+#### Set the HTTPS host URL
+-         @newServer,host=http://server.com/esp,lastRun=1;
