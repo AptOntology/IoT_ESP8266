@@ -121,7 +121,7 @@ void handleControl()
   }
   else if(server.arg(0).indexOf("sendStatus") >= 0)
   {
-    UpdateSettings("@sendStatus,net=1,sys=1;");
+    UpdateSettings("@sendStatus,net=1,sys=1,lastRun=1;");
   }
   else if(server.arg(0).indexOf("getUpdateNow") >= 0)
   {
@@ -223,29 +223,32 @@ void handleInfo()
       htmlOut += "<i>self-check</i>";
     }
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>Stage</td><td>";
+    htmlOut += "<tr><td>Status</td><td>";
     htmlOut += theStatus;
     htmlOut += "</td></tr>";
     htmlOut += "<tr><th>System</th><th> </th></tr>";
     htmlOut += "<tr><td>Uptime</td><td>";
     htmlOut += String(millis() / 60000);
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>CpuFreqMHz</td><td>";
+    htmlOut += "<tr><td>Cpu Freq MHz</td><td>";
     htmlOut += (String)ESP.getCpuFreqMHz();
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>FreeHeap</td><td> ";
+    htmlOut += "<tr><td>Free Heap</td><td> ";
     htmlOut += (String)ESP.getFreeHeap();
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>HeapFragmentation</td><td> ";
+    htmlOut += "<tr><td>Heap Fragmentation</td><td> ";
     htmlOut += (String)ESP.getHeapFragmentation();
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>FreeSketchSpace</td><td> ";
+    htmlOut += "<tr><td>Free Sketch Space</td><td> ";
     htmlOut += (String)ESP.getFreeSketchSpace();
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>checkFlashConfig</td><td> ";
+    htmlOut += "<tr><td>Check Flash Config</td><td> ";
     htmlOut += (String)ESP.checkFlashConfig();
     htmlOut += "</td></tr>";
-    htmlOut += "<tr><td>ResetInfo</td><td> ";
+    htmlOut += "<tr><td>Program Version</td><td> ";
+    htmlOut += (String)programVersion;
+    htmlOut += "</td></tr>";
+    htmlOut += "<tr><td>Reset Info</td><td> ";
     htmlOut += (String)ESP.getResetInfo();
     htmlOut += "</td></tr>";
 
@@ -464,6 +467,6 @@ void handleConnectWifi() {
     WiFiMulti.addAP((server.arg(0)).c_str());
    }
    WiFi.reconnect();
-   delay(300); //rest easy
+   delay(30); //rest easy
    handleRoot(); 
 }
