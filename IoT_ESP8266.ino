@@ -159,6 +159,8 @@ String GetHttpResponse(String url) {
   Out("debug GetHttpResponse url", url);
   String payload;
   std::unique_ptr<BearSSL::WiFiClientSecure> client(new BearSSL::WiFiClientSecure);
+  client->setFingerprint(fingerprint_sni_cloudflaressl_com);
+  client->setInsecure();
   if(url.indexOf("https") == -1)
   {
     Out("debug GetHttpResponse require HTTPS", url);
