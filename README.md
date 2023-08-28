@@ -40,7 +40,7 @@
 - Example (flopflip): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 0(low) and when the digial read is 0(low) then set digital pin 12 to 1(high)
 -         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
 
-- Example (On then On, Off then off): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when the digial read is 0(low) then set digital pin 12 to 0(low)
+- Example (Relay): Get input from digital pin 10 every 1000 millis and when digital read is 1(high) then set digital pin 12 to 1(high) and when the digial read is 0(low) then set digital pin 12 to 0(low)
 -         @adCommand,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=low,time=1000,lastRun=0;
 
 #### analogRead send data to server on interval 
