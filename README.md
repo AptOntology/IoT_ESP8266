@@ -27,8 +27,8 @@
 - Example (On over highVal, off under lowVal) : Get input from analog pin, when analog value is above 1000 then set digital pin out 12 to high, if below 500 then set pin 12 to low
 -         @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1000,lowVal=500,isOn=overHigh,isOff=underLow,time=10000,lastRun=0;
 
-- Example (On below minimum, off above maximum) Get input from analog pin, when analog value is below 1000 then set digital pin out 12 to high, if above 1024 then set pin 12 to low.
--         @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=underLow,isOff=aboveHigh,time=10000,lastRun=0;
+- Example (On below minimum, off above maximum) Get input from analog pin A0 every 1000 millis, when analog value is below 100 then set digital pin out 12 to high, if above 1000 then set pin 12 to low.
+-         @adCommand,input=analog,out=digital,pinIn=A0,pinOut=12,highVal=1000,lowVal=100,isOn=underLow,isOff=aboveHigh,time=1000,lastRun=0;
 
 - Example (On between, off over high and under low)
 -         @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=800,lowVal=400,isOn=between,isOff=overUnder,time=1000,lastRun=0;
