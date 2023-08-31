@@ -16,7 +16,7 @@
  - 0 is setting as-is and run on next interval
  - 1 is runOnce and set enable=0
  - 2 is update setting and keep the previous lastRun
- - >10 is run on interval and update lastRun to now
+ - Above 10 is run on interval and update lastRun to now
 
 #### Analog input to digital output
 - isOn/isOff in states overHigh, underLow, overUnder, and between the highVal and lowVal, if isOn(on) elseif isOff(off)
