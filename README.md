@@ -13,10 +13,10 @@
 -         @system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=1;
 
 #### the lastRun switch : 
- - 0 is runNow and update lastRun to now
+ - 0 is setting as-is and run on next interval
  - 1 is runOnce and set enable=0
- - 2-10 is update setting and keep the previous lastRun
- - above 10 is to run on interval and update lastRun to now
+ - 2 is update setting and keep the previous lastRun
+ - >10 is run on interval and update lastRun to now
 
 #### Analog input to digital output
 - isOn/isOff in states overHigh, underLow, overUnder, and between the highVal and lowVal, if isOn(on) elseif isOff(off)
