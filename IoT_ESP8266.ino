@@ -15,25 +15,25 @@ Settings
 
 analog input to digital output
 isOn/isOff while overHigh, underLow, overUnder, or between the highVal or lowVal | if isOn(on) elseif isOff(off)
-Example (On over highVal, off under lowVal) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1000,lowVal=500,isOn=overHigh,isOff=underLow,time=10000,lastRun=0;
-Example (On between, off when under minimum) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
-Example (On between, off ov0er high or under low) : @sampleExecute,input=analog,pinIn=A0,pinOut=12,highVal=800,lowVal=400,isOn=between,isOff=overUnder,time=1000,lastRun=0;
+Example (On over highVal, off under lowVal) : @sampleExecute,enable=1,input=analog,pinIn=A0,pinOut=12,highVal=1000,lowVal=500,isOn=overHigh,isOff=underLow,time=10000,lastRun=0;
+Example (On between, off under minimum) : @sampleExecute,enable=1,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underLow,time=10000,lastRun=0;
+Example (On between, off over high or under low) : @sampleExecute,enable=1,input=analog,pinIn=A0,pinOut=12,highVal=800,lowVal=400,isOn=between,isOff=overUnder,time=1000,lastRun=0;
 
 digital input to digital output:
-Example (trigger): @sampleExecute,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,=0;
-Example (flopflip): @sampleExecute,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
+Example (trigger): @sampleExecute,enable=1,input=digital,pinIn=10,pinOut=12,isOn=high,isOff=no,time=10000,lastRun=0;
+Example (flopflip): @sampleExecute,enable=1,input=digital,pinIn=10,pinOut=12,isOn=low,isOff=high,time=1000,lastRun=0;
 
 @analogRead,enable=1,pin=A0,returnMaxMin=1,time=100000,lastRun=0;
 @digitalRead,enable=1,pin=12,time=30000,lastRun=0;
 @digitalWrite,enable=1,pin=12,type=HIGH,time=1000,lastrun=1;
 
 @system,enable=1,newLoop=500,accessPoint=0,httpSrv=0,update=200000,debug=0,serialRead=0,time=100000,lastRun=1; // production mode
-@system,enable=1,neWifi=SSID,newPSK=PSK,cycleWifi=1,lastRun=1; // addAP,new PSK optional, disconnect then connect wifi
+@system,enable=1,neWifi=SSID,newPSK=PSK,wifiCycle=1,lastRun=1; // addAP,new PSK optional, disconnect then connect wifi
 @serialRead,enable=1,lastRun=1; 
 @network,mdns=1,ssdp=1,llmnr=1,dnsHost=1,lastRun=1; // todo, dnsHost cmd to dish out the new hostURL when offline
 @update,enable=1,time=300000,lastRun=0; //get update from https server
-@newServer,host=http://server.com/esp,lastRun=1; //set https server URL
-@sendStatus,enable=1,net=1,sys=1,time=10000,lastRun=0; 
+@newServer,newHost=http://server.com/esp,lastRun=1; //set https server URL
+@sendStatus,enable=1,net=1,sys=1,time=60000,lastRun=0; 
 
 Todo 
 test and debug use case scenarios
@@ -50,7 +50,7 @@ control.php: Get request, arg ESPID : returns string of settings
 data.php: Get request, args ESPID,command,result :  saves to server todo POST
 
 authentication and authorization
-- calculated PSK from ESPID, pseudo-secure 
+- algorithm PSK from ESPID for AP or httpSrv
 
 Native libraries 
 */
@@ -79,6 +79,7 @@ void SendData(String command, String data); // Sends chipId, command, data to ho
 void RunCommands(); // Main 
 void SetupAP(bool beAP); // Setup / Tear down an Access Point 
 void Out(String function, String message); // Write serial output
+void findESPAP();
 
 // Function declarations external files
 void loophttpSrv(); // httpSrv.ino 
@@ -89,16 +90,16 @@ void loopNet();
 //Global variables
 String hostUrl; // set via initSettings or @newServer
 
-float programVersion = 0.03;
-int intMaxData = 30;
-String sendDataOut[3][30]; // [0][x]=command,[1][x]=result, [2][x]=millis()
+float programVersion = 0.04;
 bool isDebugOut = true; //Enable verbose debug logging Out()
 bool isSettingsInit = false; //initSettings()
 bool apInitialized = false; //SetupAP()
 bool beHttpSrv = false; //enabled through @httpSrv
 bool beNetSrv = false; //enabled through @network
 bool beHost = false; //enabled through @network
-int sendDataCount=0; //SendData()
+int sendDataCount=0; //current count for SendData()
+int intMaxData = 30; //maximum count for SendData(), make less than sendDataOut[][x]
+String sendDataOut[4][31]; //[0][x]=command,[1][x]=result, [2][x]=millis()
 int loopInterval = 1000; // delay between action
 int defaultIntervalStr = 450000; //if a setting has no interval then add default
 String theStatus; // short string system status for Output
@@ -107,8 +108,8 @@ String espSettings[30]; // holds commands to run on schedule or trigger
 //Functions
 void setup() {
   Serial.begin(115200);
-  Serial.println("");
   Serial.println("On!");
+  Out("setup version",(String)programVersion);
   WiFi.mode(WIFI_STA);
   WiFiMulti.addAP(STASSID, STAPSK);
   Out("setup","Add ssid...'" STASSID "'");
@@ -121,7 +122,6 @@ void loop() {
   }
   else
   {
-    theStatus = "No WiFi";
     SetupAP(true);
     RunCommands();
   }
@@ -138,7 +138,7 @@ void loop() {
 
 void initSettings() {
   espSettings[0] = "@system,enable=1,newLoop=1000,accessPoint=0,httpSrv=1,update=200000,debug=1,serialRead=1,time=10000,lastRun=1;";
-  theStatus = "Initialized";
+  theStatus = "initialized";
   hostUrl = "https://localhost/esp"; // https://YourServerURL.com
   isSettingsInit = true;
 }
@@ -229,7 +229,7 @@ bool GetUpdateFromHost() {
     if(theCmd.indexOf("@") == 0) // every setting must start with @, if >= or otherwise then its broken setting, could also check for trailing ; while we're here
     {
       UpdateSettings(theCmd);
-      theStatus = "Server config";
+      theStatus = "server config";
     }
     else
     {
@@ -253,7 +253,7 @@ void UpdateSettings(String line) {
       String settingName = line.substring(line.indexOf("@")+1, line.indexOf(",")); 
       String pinStr;
       String theCmdPin;
-      if(line.indexOf("pinOut") != -1) //unique setting per output pin, @sampleExecute 
+      if(line.indexOf("pinOut") != -1) //todo abstract this out of UpdateSettings(): unique setting per output pin, @sampleExecute 
       {
         pinStr = GetSettingValue(line,"pinOut");
         theCmdPin = "pinOut=";
@@ -341,6 +341,7 @@ void RunCommands() {
         String intervalStr = GetSettingValue(toRun,"time"); 
         String lastRunStr = GetSettingValue(toRun,"lastRun");
         if(intervalStr == "") { intervalStr = defaultIntervalStr;} // if no interval then set to 450 seconds
+        if(lastRunStr == "") { lastRunStr = "1";}
 
         if(lastRunStr == "1" || lastRunStr == "0" || millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str())) //if lastRun=0 OR interval match OR trigger then run NOW
         {
@@ -379,7 +380,7 @@ void RunCommands() {
               Out("debug RunCommands analogRead pinStr invalid : ", pinStr);
             }
           }
-          if(toRun.startsWith("@digitalRead")) // toRun : @digitalRead,pin=0,time=10000,lastrun=0; 
+          if(toRun.startsWith("@digitalRead")) // toRun : @digitalRead,pin=12,time=60000,lastrun=0; 
           {
             String pinStr = GetSettingValue(toRun,"pin");
             if(pinStr.length() == 1 || pinStr.length() == 2) // this must be 1 or 2
@@ -406,7 +407,7 @@ void RunCommands() {
               Out("debug RunCommands digitalRead pinStr invalid ", pinStr);
             }
           }
-          if(toRun.startsWith("@digitalWrite"))   // toRun : @digitalWrite,enable=1,pin=0,type=HIGH,time=1000,lastrun=0;
+          if(toRun.startsWith("@digitalWrite"))   // toRun : @digitalWrite,enable=1,pin=12,type=HIGH,time=1000,lastrun=1; || @digitalWrite,enable=1,pin=12,type=LOW,time=1000,lastrun=1;
           {
             String pinStr = GetSettingValue(toRun,"pin");
             String typeStr = GetSettingValue(toRun,"type");
@@ -439,7 +440,7 @@ void RunCommands() {
             {
               Out("debug RunCommands digitalWrite pinStr invalid : ", pinStr);
             }
-          } 
+          }
           if(toRun.startsWith("@sampleExecute")) // toRun @sampleExecute,enable=1,input=analog,pinIn=A0,pinOut=12,highVal=1024,lowVal=1000,isOn=between,isOff=underlow,time=10000,lastRun=0;
           {         
             String inStr = GetSettingValue(toRun,"input");
@@ -560,43 +561,39 @@ void RunCommands() {
             {
               updatedToRun = "@sendStatus,enable=1,"; 
             }
-            if(millis() > atoi(lastRunStr.c_str()) + atoi(intervalStr.c_str()))
+            if(netStr == "1")
             {
-              if(netStr == "1")
-              {
-                SendData("localIP", (String)WiFi.localIP().toString());
-                SendData("gatewayIP", (String)WiFi.gatewayIP().toString());;
-                Out("RunCommands SendStatus net", (String)WiFi.localIP().toString());
-                updatedToRun += "net=1,";
-              }
-              else
-              {
-                updatedToRun += "net=0,";
-              }
-              if(sysStr == "1")
-              {
-                SendData("uptime", String(millis() / 60000));
-                SendData("status", theStatus);
-                Out("RunCommands SendStatus", theStatus);
-                updatedToRun += "sys=1,";
-              }
-              else
-              {
-                updatedToRun += "sys=0,";
-              }
-              UpdateSettings(updatedToRun+"time="+intervalStr+",lastRun="+millis()+";");
-            }        
+              SendData("localIP", (String)WiFi.localIP().toString());
+              SendData("gatewayIP", (String)WiFi.gatewayIP().toString());;
+              Out("RunCommands : sendStatus ip", (String)WiFi.localIP().toString());
+              updatedToRun += "net=1,";
+            }
+            else
+            {
+              updatedToRun += "net=0,";
+            }
+            if(sysStr == "1")
+            {
+              SendData("uptime", String(millis() / 60000)); //todo / observed behavior where this sets the hostUrl to be the uptime in minutes after 
+              SendData("status", theStatus);
+              Out("RunCommands : sendStatus", theStatus);
+              updatedToRun += "sys=1,";
+            }
+            else
+            {
+              updatedToRun += "sys=0,";
+            }
+            UpdateSettings(updatedToRun+"time="+intervalStr+",lastRun="+millis()+";");   
           }
-          if(toRun.startsWith("@newServer")) // @newServer,host=http://server.com/esp,lastRun=1;
+          if(toRun.startsWith("@newServer")) // @newServer,newHost=http://server.com/esp,lastRun=1;
           {
-            String hostStr = GetSettingValue(toRun,"host");
+            String hostStr = GetSettingValue(toRun,"newHost");
             if(hostStr.substring(hostStr.length()-1,hostStr.length()) == "/") //last char == /
             {
-              Out("debug RunCommands newServer","Last char is /");
+              Out("debug RunCommands newServer","Removing last /");
               hostStr = hostStr.substring(0,hostStr.length()-1);
             }
             espSettings[i] = ""; //run once, a trigger setting
-
             hostUrl = hostStr;
           }
           if(toRun.startsWith("@system")) // @system,enable=1,newLoop=1000,accessPoint=1,httpSrv=1,update=10000,debug=1,serialRead=1,time=100000,lastRun=0;
@@ -685,12 +682,7 @@ void RunCommands() {
               updatedToRun += "debug=0,";
               isDebugOut = false;
             }
-            else if (false)
-            {
-              //updatedToRun += "debug=" + prevDebugStr + ","; //no incoming, set to last
-            }
 
-            //Out("debug RunCommands serialStr", serialStr);
             if(serialStr == "1")
             {
               updatedToRun += "serialRead=1,";
@@ -700,11 +692,6 @@ void RunCommands() {
             {
               updatedToRun += "serialRead=0,";
               UpdateSettings("@serialRead,enable=0,lastRun=1;");
-            }
-            else if(false)
-            {
-              //updatedToRun += "serialRead=" + prevSerialStr + ",";
-              //UpdateSettings("@serialRead,enable="+prevSerialStr+";");
             }
 
             long newLoopInterval = atoi(loopStr.c_str());
@@ -720,7 +707,7 @@ void RunCommands() {
             }
             UpdateSettings(systemCmdStr + updatedToRun+"time="+intervalStr+",lastRun="+millis()+";");    
           }
-          if(toRun.startsWith("@network")) //@network,enable=1,ssdp=1,mdns=1,llmnr=1,lastRun=0; accessPoint,httpSrv?
+          if(toRun.startsWith("@network")) //@network,enable=1,ssdp=1,mdns=1,llmnr=1,lastRun=1; accessPoint,httpSrv?
           {
             String ssdpStr = GetSettingValue(toRun,"ssdp");
             String mdnsStr = GetSettingValue(toRun,"mdns");
@@ -785,7 +772,7 @@ void RunCommands() {
                 Out("RunCommands serialRead",readStr);
                 if(readStr.startsWith("@"))
                 {
-                  theStatus = "Serial config";
+                  theStatus = "serial config";
                   UpdateSettings(readStr);
                 }
                 else
