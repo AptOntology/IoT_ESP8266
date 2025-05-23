@@ -48,10 +48,6 @@ test and debug use case scenarios
 
 linking, frequency timing, accurate event sequencing 
 
-mesh/standalone mode
-If no initial wifi: scan for open ESP_ID### AP, connect, get settings, and run commands function as usual. 
-If no ESP_ID: be ap, dns(hostURL), and http server and dish out settings through hostURL/control.php. Receive by data.php to array, Store&forward
-
 device support: 
 GPIO, digitalRead,digitalWrite,analogRead
 PWM,SPI, todo
@@ -63,9 +59,7 @@ data.php: Get request, args ESPID,command,result :  saves to server todo POST
 authentication and authorization
 - algorithm PSK from ESPID for AP or httpSrv
 
-to do is allow esp linking via routine wifi scans with online nodes for the ESP_ID and they connect,
- issue commands to link, and mesh to internet. where the presence of ESP_ID node indicates an offline node to mesh in. 
- where the online node becomes a secured AP, links to the offline node and add an AP to the offline to reconnect back to the online node, and the online node connects back to the online AP and routes for the offline node, allowing distance meshing.  sharing and data lots of data.   
+distance meshing.  sharing and data lots of data.   
 
 Native libraries 
 */
